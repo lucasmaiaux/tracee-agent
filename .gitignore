@@ -1,0 +1,114 @@
+# ============================================
+# Instructions Claude Code (personnel)
+# ============================================
+CLAUDE.md
+.claude/
+
+# ============================================
+# Configuration locale (avec token agent)
+# ============================================
+config.yaml
+config.local.yaml
+*.local
+
+# ============================================
+# Secrets
+# ============================================
+.env
+.env.local
+secrets/
+*.key
+*.pem
+
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environnements virtuels
+.venv/
+venv/
+ENV/
+env/
+
+# Tests et coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+
+# ============================================
+# Packaging
+# ============================================
+# PyInstaller
+*.spec
+build/
+dist/
+
+# Paquets construits
+*.deb
+*.rpm
+*.pkg
+*.exe
+*.dmg
+*.AppImage
+packaging/output/
+
+# ============================================
+# IDE et éditeurs
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================
+# Données et captures de test
+# ============================================
+# Captures PCAP locales (sauf fixtures de test)
+*.pcap
+*.pcapng
+!tests/fixtures/*.pcap
+!tests/fixtures/*.pcapng
+
+# Bases MaxMind locales (à télécharger)
+*.mmdb
+
+# ============================================
+# Logs
+# ============================================
+*.log
+logs/
+log/
+
+# ============================================
+# Divers
+# ============================================
+*.bak
+*.tmp
+.cache
