@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Agent de capture réseau pour Tracee"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []   # Scapy viendra avec la capture (#6), pas avant
+dependencies = [
+    "pydantic>=2.13.4",
+    "pyyaml>=6.0.3",
+]   # Scapy viendra avec la capture (#6), pas avant
 
 [project.scripts]
 tracee-agent = "tracee_agent.main:main"   # la commande → la fonction main()
