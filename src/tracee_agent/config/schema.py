@@ -14,7 +14,7 @@ class ServerConfig(BaseModel):
 class CaptureConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     default_interface: str | None = None
-    snaplen: int = Field(default=512, gt=0)     # > 0 sinon erreur
+    snaplen: int = Field(default=512, gt=0)  # > 0 sinon erreur
 
 
 class LoggingConfig(BaseModel):

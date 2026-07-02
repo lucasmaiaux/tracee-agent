@@ -8,4 +8,4 @@ capture:
 
 logging:
   level: "INFO"                # DEBUG | INFO | WARNING | ERROR | CRITICAL
-  file: "/var/log/tracee-agent.log"
+  file: "/var/log/tracee-agent.log" # null = stderr (dev) ;
