@@ -1,0 +1,9 @@
+# Hooks locaux exécutés au `git commit`. Installer une fois : `uv run pre-commit install`.
+# Mettre à jour les révisions : `uv run pre-commit autoupdate`.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20 # aligné sur la version de ruff dans uv.lock
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

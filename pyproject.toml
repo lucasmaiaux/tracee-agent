@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
+    "structlog>=26.1.0",
 ]   # Scapy viendra avec la capture (#6), pas avant
 
 [project.scripts]
@@ -18,3 +19,22 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tracee_agent"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# E/F : erreurs pycodestyle + pyflakes · I : tri des imports (remplace isort)
+# UP : pyupgrade (syntaxe moderne) · B : bugs probables · SIM : simplifications
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+]
