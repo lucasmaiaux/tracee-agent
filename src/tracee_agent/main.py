@@ -5,6 +5,7 @@ import asyncio
 
 import structlog
 
+from tracee_agent.capture.interfaces import format_interfaces, list_interfaces
 from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.loader import ConfigError, load_config
 from tracee_agent.config.schema import AgentConfig
@@ -22,7 +23,12 @@ def parse_args() -> argparse.Namespace:
         prog="tracee-agent",
         description="Agent de capture réseau pour Tracee",
     )
-    parser.add_argument("--config", required=True, help="Chemin du fichier config.yaml")
+    parser.add_argument("--config", help="Chemin du fichier config.yaml")
+    parser.add_argument(
+        "--list-interfaces",
+        action="store_true",
+        help="Lister les interfaces réseau capturables et quitter",
+    )
     parser.add_argument("--interface", help="Interface à capturer (surcharge la config)")
     parser.add_argument("--verbose", action="store_true", help="Logs détaillés (DEBUG)")
     return parser.parse_args()
@@ -66,6 +72,16 @@ def main() -> None:
     # Bootstrap : on ne connaît pas encore la config, on part d'un niveau par défaut
     # pour pouvoir déjà rapporter une éventuelle erreur de chargement.
     configure_logging("DEBUG" if args.verbose else "INFO")
+
+    if args.list_interfaces:
+        # Produit de la commande → stdout (comme --help), pas un log de diagnostic.
+        print(format_interfaces(list_interfaces()))
+        return
+
+    if args.config is None:
+        logger.error("config_requise", indice="fournir --config ou utiliser --list-interfaces")
+        raise SystemExit(2)
+
     try:
         config = load_config(args.config)
     except ConfigError as exc:
