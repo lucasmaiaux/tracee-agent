@@ -10,6 +10,7 @@ from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.loader import ConfigError, load_config
 from tracee_agent.config.schema import AgentConfig
 from tracee_agent.logging import configure_logging
+from tracee_agent.parser import parse_packet
 
 logger = structlog.get_logger("tracee_agent")
 
@@ -35,16 +36,25 @@ def parse_args() -> argparse.Namespace:
 
 
 async def _consume(queue: asyncio.Queue[bytes]) -> None:
-    """Consommateur de démonstration en attendant le parser (#7).
+    """Décode chaque paquet capturé et journalise son 5-tuple.
 
-    Prouve que la chaîne capture → file → consommateur tourne sans bloquer la
-    boucle asyncio. Sera remplacé par le pipeline de parsing.
+    Le parsing est branché ici ; l'émission des événements vers le serveur
+    (WebSocket) viendra avec le transport (#18). Les paquets hors périmètre
+    (non-IP, ni TCP/UDP, ou trop tronqués) sont ignorés par ``parse_packet``.
     """
-    total = 0
     while True:
         data = await queue.get()
-        total += 1
-        logger.debug("paquet_recu", taille=len(data), total=total)
+        packet = parse_packet(data)
+        if packet is None:
+            continue
+        logger.debug(
+            "paquet_decode",
+            protocole=packet.protocol,
+            source=f"{packet.source_ip}:{packet.source_port}",
+            destination=f"{packet.dest_ip}:{packet.dest_port}",
+            taille=packet.packet_size,
+            payload=packet.payload_size,
+        )
 
 
 async def _run(config: AgentConfig, interface: str | None) -> None:

@@ -1,7 +1,9 @@
 .PHONY: dev lint format test
 
-dev:              ## Lancer l'agent en dev (config.yaml local)
-	uv run tracee-agent --config config.yaml
+dev:              ## Lancer l'agent en dev : choisir l'interface puis capturer (sudo)
+	@.venv/bin/tracee-agent --list-interfaces
+	@printf "Interface à capturer : " && read iface && \
+		sudo .venv/bin/tracee-agent --config config.yaml --interface $$iface --verbose
 
 lint:             ## Vérifier le code sans le modifier (CI)
 	uv run ruff check .
