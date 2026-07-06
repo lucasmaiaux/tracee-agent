@@ -13,3 +13,12 @@ format:           ## Formater + corriger automatiquement
 
 test:             ## Lancer les tests
 	uv run pytest
+
+trace1:
+	sudo .venv/bin/python scripts_temp/explore_capture.py
+
+trace2:
+	sudo .venv/bin/python scripts_temp/explore_capture2.py
+
+trace3:
+	sudo .venv/bin/python scripts_temp/explore_sni.py

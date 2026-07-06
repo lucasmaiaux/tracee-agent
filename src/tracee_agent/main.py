@@ -1,13 +1,20 @@
 """Point d'entrée CLI de l'agent Tracee."""
 
 import argparse
+import asyncio
 
 import structlog
 
+from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.loader import ConfigError, load_config
+from tracee_agent.config.schema import AgentConfig
 from tracee_agent.logging import configure_logging
 
 logger = structlog.get_logger("tracee_agent")
+
+# File bornée entre la capture et son consommateur : au-delà, on préfère perdre
+# des paquets (backpressure) plutôt que gonfler la mémoire indéfiniment.
+_QUEUE_MAXSIZE = 10_000
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,6 +26,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interface", help="Interface à capturer (surcharge la config)")
     parser.add_argument("--verbose", action="store_true", help="Logs détaillés (DEBUG)")
     return parser.parse_args()
+
+
+async def _consume(queue: asyncio.Queue[bytes]) -> None:
+    """Consommateur de démonstration en attendant le parser (#7).
+
+    Prouve que la chaîne capture → file → consommateur tourne sans bloquer la
+    boucle asyncio. Sera remplacé par le pipeline de parsing.
+    """
+    total = 0
+    while True:
+        data = await queue.get()
+        total += 1
+        logger.debug("paquet_recu", taille=len(data), total=total)
+
+
+async def _run(config: AgentConfig, interface: str | None) -> None:
+    if interface is None:
+        # Un agent de capture ne doit pas écouter « au hasard » : on refuse de
+        # démarrer plutôt que de laisser Scapy choisir une interface implicite.
+        logger.error("aucune_interface_configuree")
+        raise SystemExit(2)
+
+    queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
+    capture = PacketCapture(interface, config.capture.snaplen, queue)
+    try:
+        capture.start()
+    except CaptureError as exc:
+        logger.error("capture_indisponible", erreur=str(exc))
+        raise SystemExit(1) from None
+    try:
+        await _consume(queue)
+    finally:
+        capture.stop()  # arrêt propre même sur Ctrl+C / annulation
 
 
 def main() -> None:
@@ -38,6 +78,11 @@ def main() -> None:
 
     interface = args.interface or config.capture.default_interface
     logger.info("agent_demarre", interface=interface, serveur=config.server.url)
+
+    try:
+        asyncio.run(_run(config, interface))
+    except KeyboardInterrupt:
+        logger.info("agent_arrete")
 
 
 if __name__ == "__main__":
