@@ -9,8 +9,9 @@ from tracee_agent.capture.interfaces import format_interfaces, list_interfaces
 from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.loader import ConfigError, load_config
 from tracee_agent.config.schema import AgentConfig
+from tracee_agent.identifier import ServiceIdentifier
 from tracee_agent.logging import configure_logging
-from tracee_agent.parser import ClientHelloReassembler, parse_packet
+from tracee_agent.parser import ClientHelloReassembler, parse_dns, parse_packet
 
 logger = structlog.get_logger("tracee_agent")
 
@@ -36,15 +37,19 @@ def parse_args() -> argparse.Namespace:
 
 
 async def _consume(queue: asyncio.Queue[bytes]) -> None:
-    """Décode chaque paquet capturé et journalise son 5-tuple.
+    """Décode chaque paquet, identifie le service du flux, et journalise.
 
-    Le parsing est branché ici ; l'émission des événements vers le serveur
-    (WebSocket) viendra avec le transport (#18). Les paquets hors périmètre
-    (non-IP, ni TCP/UDP, ou trop tronqués) sont ignorés par ``parse_packet``.
+    Le parsing et l'identification (SNI + cache DNS observé) sont branchés ici ;
+    l'émission des événements vers le serveur (WebSocket) viendra avec le transport
+    (#18) et appellera ``identifier.resolve`` pour remplir ``service_hint``. Les
+    paquets hors périmètre (non-IP, ni TCP/UDP, ou trop tronqués) sont ignorés par
+    ``parse_packet``.
     """
-    # Réassembleur partagé sur toute la session : un ClientHello peut s'étaler sur
-    # plusieurs segments TCP, son état doit persister entre les paquets.
+    # État partagé sur toute la session : le réassembleur (un ClientHello peut
+    # s'étaler sur plusieurs segments TCP) et l'identificateur (carnet SNI par flux
+    # + cache DNS observé), tous deux alimentés au fil des paquets.
     reassembler = ClientHelloReassembler()
+    identifier = ServiceIdentifier()
     while True:
         data = await queue.get()
         packet = parse_packet(data)
@@ -59,13 +64,29 @@ async def _consume(queue: asyncio.Queue[bytes]) -> None:
             payload=packet.payload_size,
         )
 
-        # Identification locale : un ClientHello TLS révèle le domaine visé (SNI),
-        # éventuellement reconstitué à partir de plusieurs segments.
+        # Observation DNS : les messages sur UDP/53 alimentent le cache IP → domaine
+        # (les réponses portent les résolutions ; une requête est un no-op).
+        if packet.protocol == "udp" and 53 in (packet.source_port, packet.dest_port):
+            message = parse_dns(packet.payload)
+            if message is not None:
+                identifier.observe_dns(message)
+
+        # Identification par SNI : un ClientHello TLS révèle le domaine visé,
+        # éventuellement reconstitué à partir de plusieurs segments. On mémorise le
+        # SNI pour tout le flux, puis on journalise le service résolu (SNI > DNS).
         if packet.protocol == "tcp" and packet.payload:
             flow = (packet.source_ip, packet.source_port, packet.dest_ip, packet.dest_port)
             sni = reassembler.feed(flow, packet.payload)
             if sni is not None:
-                logger.info("sni_detecte", domaine=sni, destination=packet.dest_ip)
+                identifier.observe_sni(flow, sni)
+                hint = identifier.resolve(flow)
+                if hint is not None:
+                    logger.info(
+                        "service_identifie",
+                        source=hint.source,
+                        service=hint.value,
+                        destination=packet.dest_ip,
+                    )
 
 
 async def _run(config: AgentConfig, interface: str | None) -> None:
