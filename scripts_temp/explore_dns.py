@@ -18,12 +18,18 @@ Lancer :  .venv/bin/python scripts_temp/explore_dns.py
 
 header = bytes(
     [
-        0x12, 0x34,  # ID (identifiant de la transaction, choisi par le client)
-        0x81, 0x80,  # Flags : réponse standard, sans erreur
-        0x00, 0x01,  # QDCOUNT = 1  → 1 question
-        0x00, 0x01,  # ANCOUNT = 1  → 1 réponse
-        0x00, 0x00,  # NSCOUNT = 0
-        0x00, 0x00,  # ARCOUNT = 0
+        0x12,
+        0x34,  # ID (identifiant de la transaction, choisi par le client)
+        0x81,
+        0x80,  # Flags : réponse standard, sans erreur
+        0x00,
+        0x01,  # QDCOUNT = 1  → 1 question
+        0x00,
+        0x01,  # ANCOUNT = 1  → 1 réponse
+        0x00,
+        0x00,  # NSCOUNT = 0
+        0x00,
+        0x00,  # ARCOUNT = 0
     ]
 )  # 12 octets, offsets 0..11
 
@@ -40,11 +46,11 @@ question = qname + bytes([0x00, 0x01, 0x00, 0x01])  # QTYPE=A(1), QCLASS=IN(1)
 POINTER_TO_QNAME = bytes([0xC0, 0x0C])
 answer = (
     POINTER_TO_QNAME
-    + bytes([0x00, 0x01])            # TYPE = A
-    + bytes([0x00, 0x01])            # CLASS = IN
+    + bytes([0x00, 0x01])  # TYPE = A
+    + bytes([0x00, 0x01])  # CLASS = IN
     + bytes([0x00, 0x00, 0x02, 0x58])  # TTL = 600 s
-    + bytes([0x00, 0x04])            # RDLENGTH = 4 octets
-    + bytes([93, 184, 216, 34])      # RDATA = 93.184.216.34
+    + bytes([0x00, 0x04])  # RDLENGTH = 4 octets
+    + bytes([93, 184, 216, 34])  # RDATA = 93.184.216.34
 )
 
 message = header + question + answer
@@ -97,8 +103,10 @@ def read_name(msg: bytes, offset: int, *, verbose: bool = False) -> tuple[str, i
             # 14 bits bas = offset cible (on enlève les 2 bits de marquage).
             target = ((length & 0x3F) << 8) | msg[offset + 1]
             if verbose:
-                print(f"    offset {offset:>2} : {length:02x} {msg[offset + 1]:02x} "
-                      f"→ POINTEUR vers offset {target}")
+                print(
+                    f"    offset {offset:>2} : {length:02x} {msg[offset + 1]:02x} "
+                    f"→ POINTEUR vers offset {target}"
+                )
             if target in seen_pointers:
                 raise ValueError(f"pointeur cyclique détecté (offset {target})")
             seen_pointers.add(target)
