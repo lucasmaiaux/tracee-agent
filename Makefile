@@ -1,6 +1,11 @@
-.PHONY: dev lint format test
+.PHONY: dev dev-all lint format test
 
-dev:              ## Lancer l'agent en dev : choisir l'interface puis capturer (sudo)
+dev:              ## Capturer en INFO : affiche les domaines SNI détectés (sudo)
+	@.venv/bin/tracee-agent --list-interfaces
+	@printf "Interface à capturer : " && read iface && \
+		sudo .venv/bin/tracee-agent --config config.yaml --interface $$iface
+
+dev-all:      ## Capturer en DEBUG : tout le trafic décodé, paquet par paquet (sudo)
 	@.venv/bin/tracee-agent --list-interfaces
 	@printf "Interface à capturer : " && read iface && \
 		sudo .venv/bin/tracee-agent --config config.yaml --interface $$iface --verbose

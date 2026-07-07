@@ -23,7 +23,7 @@ server:
     config = load_config(path)
 
     assert config.server.url == "wss://example/ws"
-    assert config.capture.snaplen == 512  # défaut du schéma
+    assert config.capture.snaplen == 1600  # défaut du schéma
     assert config.logging.level == "INFO"  # défaut du schéma
 
 
