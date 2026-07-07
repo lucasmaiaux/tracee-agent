@@ -13,9 +13,10 @@ from typing import TextIO
 
 import structlog
 
-# ANSI cyan : distingue les logs DEBUG (secondaires) du vert d'INFO. Sans ça,
-# structlog colore debug et info de la même couleur (tous deux verts).
-_DEBUG_COLOR = "\x1b[36m"
+# ANSI cyan vif (bright) : distingue les logs DEBUG du vert d'INFO. On prend la
+# variante « bright » (96) car le cyan simple (36) est rendu très sombre par
+# certains thèmes de terminal, au point d'être illisible.
+_DEBUG_COLOR = "\x1b[96m"
 
 
 def _readable_timestamp(_: object, __: str, event_dict: dict[str, object]) -> dict[str, object]:
@@ -27,6 +28,25 @@ def _readable_timestamp(_: object, __: str, event_dict: dict[str, object]) -> di
     """
     now = datetime.now().astimezone()
     event_dict["timestamp"] = now.strftime("%Y-%m-%d %H:%M:%S.") + f"{now.microsecond // 1000:03d}"
+    return event_dict
+
+
+def _escape(value: str) -> str:
+    """Rend les octets de contrôle en ``\\xHH``, en gardant sauts de ligne et tabulations."""
+    return "".join(c if c in "\n\t" or c.isprintable() else f"\\x{ord(c):02x}" for c in value)
+
+
+def _escape_control_chars(_: object, __: str, event_dict: dict[str, object]) -> dict[str, object]:
+    """Neutralise les octets de contrôle des valeurs journalisées (assainissement de sortie).
+
+    Une donnée venue du réseau (ex. un SNI tiré d'un flux mal formé) peut contenir
+    un ESC ou un autre caractère de contrôle qui, envoyé brut au terminal,
+    corromprait l'affichage (injection de séquence d'échappement). On l'échappe ici,
+    façon Suricata/Zeek — sans toucher aux ``\\n``/``\\t`` qui structurent les tracebacks.
+    """
+    for key, value in event_dict.items():
+        if isinstance(value, str) and not value.isprintable():
+            event_dict[key] = _escape(value)
     return event_dict
 
 
@@ -60,6 +80,7 @@ def configure_logging(level: str = "INFO", log_file: str | None = None) -> None:
             timestamper,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            _escape_control_chars,  # assainit avant rendu : jamais d'octet brut au terminal
             structlog.dev.ConsoleRenderer(
                 colors=interactive,
                 sort_keys=False,  # garde l'ordre d'insertion des champs, pas l'alphabétique

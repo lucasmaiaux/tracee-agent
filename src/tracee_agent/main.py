@@ -10,7 +10,7 @@ from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.loader import ConfigError, load_config
 from tracee_agent.config.schema import AgentConfig
 from tracee_agent.logging import configure_logging
-from tracee_agent.parser import parse_packet
+from tracee_agent.parser import ClientHelloReassembler, parse_packet
 
 logger = structlog.get_logger("tracee_agent")
 
@@ -42,6 +42,9 @@ async def _consume(queue: asyncio.Queue[bytes]) -> None:
     (WebSocket) viendra avec le transport (#18). Les paquets hors périmètre
     (non-IP, ni TCP/UDP, ou trop tronqués) sont ignorés par ``parse_packet``.
     """
+    # Réassembleur partagé sur toute la session : un ClientHello peut s'étaler sur
+    # plusieurs segments TCP, son état doit persister entre les paquets.
+    reassembler = ClientHelloReassembler()
     while True:
         data = await queue.get()
         packet = parse_packet(data)
@@ -55,6 +58,14 @@ async def _consume(queue: asyncio.Queue[bytes]) -> None:
             taille=packet.packet_size,
             payload=packet.payload_size,
         )
+
+        # Identification locale : un ClientHello TLS révèle le domaine visé (SNI),
+        # éventuellement reconstitué à partir de plusieurs segments.
+        if packet.protocol == "tcp" and packet.payload:
+            flow = (packet.source_ip, packet.source_port, packet.dest_ip, packet.dest_port)
+            sni = reassembler.feed(flow, packet.payload)
+            if sni is not None:
+                logger.info("sni_detecte", domaine=sni, destination=packet.dest_ip)
 
 
 async def _run(config: AgentConfig, interface: str | None) -> None:
