@@ -9,6 +9,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "scapy>=2.6.1",
     "structlog>=26.1.0",
+    "websockets>=16.0",
 ]
 
 [project.scripts]
@@ -32,10 +33,14 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# auto : toute fonction `async def test_*` est lancée comme test async, sans avoir
+# à la décorer de @pytest.mark.asyncio.
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.15.20",
 ]
