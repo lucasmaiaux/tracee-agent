@@ -9,15 +9,22 @@ from tracee_agent.capture.interfaces import format_interfaces, list_interfaces
 from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.loader import ConfigError, load_config
 from tracee_agent.config.schema import AgentConfig
+from tracee_agent.flow import FlowAggregator
 from tracee_agent.identifier import ServiceIdentifier
 from tracee_agent.logging import configure_logging
 from tracee_agent.parser import ClientHelloReassembler, parse_dns, parse_packet
+from tracee_agent.transport.client import AgentConnection
+from tracee_agent.transport.messages import build_event
 
 logger = structlog.get_logger("tracee_agent")
 
 # File bornée entre la capture et son consommateur : au-delà, on préfère perdre
 # des paquets (backpressure) plutôt que gonfler la mémoire indéfiniment.
 _QUEUE_MAXSIZE = 10_000
+
+# Fenêtre d'agrégation : toutes les 2 s, les flux accumulés deviennent des events.
+# Fenêtre courte = globe temps réel (l'équivalent d'un « active timeout » NetFlow court).
+_FLUSH_INTERVAL_SECONDS = 2.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,25 +43,28 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def _consume(queue: asyncio.Queue[bytes]) -> None:
-    """Décode chaque paquet, identifie le service du flux, et journalise.
+async def _consume(
+    queue: asyncio.Queue[bytes],
+    aggregator: FlowAggregator,
+    identifier: ServiceIdentifier,
+    reassembler: ClientHelloReassembler,
+) -> None:
+    """Décode chaque paquet, l'agrège dans son flux, alimente l'identification et journalise.
 
-    Le parsing et l'identification (SNI + cache DNS observé) sont branchés ici ;
-    l'émission des événements vers le serveur (WebSocket) viendra avec le transport
-    (#18) et appellera ``identifier.resolve`` pour remplir ``service_hint``. Les
-    paquets hors périmètre (non-IP, ni TCP/UDP, ou trop tronqués) sont ignorés par
-    ``parse_packet``.
+    Tout paquet IP retenu par ``parse_packet`` est imputé à son flux (agrégateur) ; en
+    parallèle, les messages DNS et les ClientHello TLS alimentent l'identification de
+    service (cache DNS + carnet SNI), consultée plus tard au flush. Les paquets hors
+    périmètre (non-IP ou trop tronqués) sont ignorés par ``parse_packet``.
+
+    Journalisation d'observation : un log DEBUG par paquet décodé (mode ``--verbose`` /
+    ``dev-all``) et un log INFO à chaque nouveau SNI détecté (mode ``dev``).
     """
-    # État partagé sur toute la session : le réassembleur (un ClientHello peut
-    # s'étaler sur plusieurs segments TCP) et l'identificateur (carnet SNI par flux
-    # + cache DNS observé), tous deux alimentés au fil des paquets.
-    reassembler = ClientHelloReassembler()
-    identifier = ServiceIdentifier()
     while True:
         data = await queue.get()
         packet = parse_packet(data)
         if packet is None:
             continue
+        aggregator.add(packet)
         logger.debug(
             "paquet_decode",
             protocole=packet.protocol,
@@ -72,21 +82,40 @@ async def _consume(queue: asyncio.Queue[bytes]) -> None:
                 identifier.observe_dns(message)
 
         # Identification par SNI : un ClientHello TLS révèle le domaine visé,
-        # éventuellement reconstitué à partir de plusieurs segments. On mémorise le
-        # SNI pour tout le flux, puis on journalise le service résolu (SNI > DNS).
+        # éventuellement reconstitué à partir de plusieurs segments. On mémorise le SNI
+        # pour tout le flux ; il sera résolu au flush (SNI > DNS) via ``identifier.resolve``.
         if packet.protocol == "tcp" and packet.payload:
             flow = (packet.source_ip, packet.source_port, packet.dest_ip, packet.dest_port)
             sni = reassembler.feed(flow, packet.payload)
             if sni is not None:
                 identifier.observe_sni(flow, sni)
-                hint = identifier.resolve(flow)
-                if hint is not None:
-                    logger.info(
-                        "service_identifie",
-                        source=hint.source,
-                        service=hint.value,
-                        destination=packet.dest_ip,
-                    )
+                # Nouveau SNI détecté → une ligne INFO (comportement dev historique).
+                logger.info(
+                    "service_identifie",
+                    source="sni",
+                    service=sni,
+                    destination=packet.dest_ip,
+                )
+
+
+async def _flush_loop(
+    aggregator: FlowAggregator,
+    identifier: ServiceIdentifier,
+    connection: AgentConnection,
+    interface: str,
+) -> None:
+    """Transforme périodiquement les flux accumulés en events prêts à envoyer.
+
+    Toutes les ``_FLUSH_INTERVAL_SECONDS``, pour chaque flux de la fenêtre écoulée : on
+    résout son ``service_hint`` (SNI > DNS) puis on dépose l'``event`` dans la file
+    d'envoi du transport (dépôt non bloquant, perdu si la file sature).
+    """
+    while True:
+        await asyncio.sleep(_FLUSH_INTERVAL_SECONDS)
+        for record in aggregator.flush():
+            flow = (record.source_ip, record.source_port, record.dest_ip, record.dest_port)
+            hint = identifier.resolve(flow)
+            connection.enqueue_event(build_event(interface, record, hint))
 
 
 async def _run(config: AgentConfig, interface: str | None) -> None:
@@ -98,13 +127,34 @@ async def _run(config: AgentConfig, interface: str | None) -> None:
 
     queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
     capture = PacketCapture(interface, config.capture.snaplen, queue)
+    connection = AgentConnection(config.server)
+    aggregator = FlowAggregator()
+    # État d'identification partagé sur toute la session : réassembleur de ClientHello
+    # (un SNI peut s'étaler sur plusieurs segments TCP) et identificateur (carnet SNI par
+    # flux + cache DNS observé), alimentés par _consume et consultés par _flush_loop.
+    identifier = ServiceIdentifier()
+    reassembler = ClientHelloReassembler()
     try:
         capture.start()
     except CaptureError as exc:
         logger.error("capture_indisponible", erreur=str(exc))
         raise SystemExit(1) from None
+
+    # Trois tâches concurrentes : réseau (connexion), décodage/agrégation, flush périodique.
+    # On s'arrête dès que l'une se termine (ex. le serveur ferme la connexion) en annulant
+    # les autres ; la reconnexion automatique est le périmètre de l'US #19.
+    tasks = [
+        asyncio.create_task(connection.run()),
+        asyncio.create_task(_consume(queue, aggregator, identifier, reassembler)),
+        asyncio.create_task(_flush_loop(aggregator, identifier, connection, interface)),
+    ]
     try:
-        await _consume(queue)
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            task.result()  # propage une éventuelle exception (hors annulation)
     finally:
         capture.stop()  # arrêt propre même sur Ctrl+C / annulation
 
