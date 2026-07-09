@@ -1,14 +1,23 @@
-.PHONY: dev dev-all lint format test
+.PHONY: dev dev-all local-dev local-dev-all lint format test
+
+# Config utilisée par dev/dev-all. Surchargeable : make dev-all CONFIG=config.local.yaml
+CONFIG ?= config.yaml
 
 dev:              ## Capturer en INFO : affiche les domaines SNI détectés (sudo)
 	@.venv/bin/tracee-agent --list-interfaces
 	@printf "Interface à capturer : " && read iface && \
-		sudo .venv/bin/tracee-agent --config config.yaml --interface $$iface
+		sudo .venv/bin/tracee-agent --config $(CONFIG) --interface $$iface
 
 dev-all:      ## Capturer en DEBUG : tout le trafic décodé, paquet par paquet (sudo)
 	@.venv/bin/tracee-agent --list-interfaces
 	@printf "Interface à capturer : " && read iface && \
-		sudo .venv/bin/tracee-agent --config config.yaml --interface $$iface --verbose
+		sudo .venv/bin/tracee-agent --config $(CONFIG) --interface $$iface --verbose
+
+local-dev:        ## Comme dev, mais sur config.local.yaml (test local, backend dev)
+	@$(MAKE) dev CONFIG=config.local.yaml
+
+local-dev-all:    ## Comme dev-all, mais sur config.local.yaml (test local, backend dev)
+	@$(MAKE) dev-all CONFIG=config.local.yaml
 
 lint:             ## Vérifier le code sans le modifier (CI)
 	uv run ruff check .

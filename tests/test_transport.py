@@ -39,7 +39,7 @@ async def test_hello_envoye_avec_headers_authentifies():
 
     headers = recu["headers"]
     assert headers["Authorization"] == "Bearer tok-test"
-    assert headers["X-Protocol-Version"] == "1.0"
+    assert headers["X-Protocol-Version"] == "1.2"
 
     message = json.loads(recu["message"])
     assert message["type"] == "hello"

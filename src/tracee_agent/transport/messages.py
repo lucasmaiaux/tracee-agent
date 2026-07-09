@@ -11,10 +11,13 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 
 from tracee_agent.capture.interfaces import list_interfaces
+from tracee_agent.flow import FlowRecord
+from tracee_agent.identifier.service_identifier import ServiceHint
 
 # Version du protocole annoncée au serveur via le header X-Protocol-Version.
 # Doit rester alignée avec PROTOCOL.md (repo serveur) : toute évolution s'y décide.
-PROTOCOL_VERSION = "1.0"
+# 1.2 = message `event` en biflow (compteurs directionnels, cf. PROTOCOL.md).
+PROTOCOL_VERSION = "1.2"
 
 # Format de timestamp du protocole : ISO 8601 UTC, à la seconde, suffixe « Z »
 # (ex. « 2026-06-09T14:30:00Z »). strftime explicite car datetime.isoformat()
@@ -66,3 +69,38 @@ def build_hello() -> dict[str, object]:
         "interfaces": [{"name": iface.name} for iface in list_interfaces()],
     }
     return envelope("hello", payload)
+
+
+def build_event(
+    interface: str, flow: FlowRecord, service_hint: ServiceHint | None
+) -> dict[str, object]:
+    """Construit un message ``event`` à partir d'un flux agrégé (voir PROTOCOL.md § event).
+
+    Les compteurs du ``flow`` sont ceux de la fenêtre écoulée (un delta biflow). Le
+    ``service_hint`` (résolu par l'appelant via l'identifier, ``None`` si inconnu) se
+    sérialise en ``{"type": source, "value": value}``.
+
+    Args:
+        interface: Interface d'où provient le flux (annoncée telle quelle au serveur).
+        flow: Compteurs directionnels du flux, orienté client → serveur.
+        service_hint: Service identifié localement (SNI/DNS), ou ``None``.
+    """
+    hint: dict[str, str] | None = None
+    if service_hint is not None:
+        hint = {"type": service_hint.source, "value": service_hint.value}
+
+    payload: dict[str, object] = {
+        "interface": interface,
+        "source_ip": flow.source_ip,
+        "source_port": flow.source_port,
+        "dest_ip": flow.dest_ip,
+        "dest_port": flow.dest_port,
+        "protocol": flow.protocol,
+        "bytes_sent": flow.bytes_sent,
+        "bytes_received": flow.bytes_received,
+        "packets_sent": flow.packets_sent,
+        "packets_received": flow.packets_received,
+        "service_hint": hint,
+        "metadata": {},
+    }
+    return envelope("event", payload)
