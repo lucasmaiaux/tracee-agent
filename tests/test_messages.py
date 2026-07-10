@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from tracee_agent.flow import FlowRecord
 from tracee_agent.identifier.service_identifier import ServiceHint
-from tracee_agent.transport.messages import build_event
+from tracee_agent.transport.messages import build_event, build_heartbeat
 
 
 def test_build_event_mappe_un_flux_biflow_conforme() -> None:
@@ -59,3 +59,12 @@ def test_build_event_flux_sans_hint_ni_ports() -> None:
     assert payload["source_port"] is None
     assert payload["dest_port"] is None
     assert payload["protocol"] == "icmp"
+
+
+def test_build_heartbeat_porte_les_compteurs() -> None:
+    """Un heartbeat conforme au PROTOCOL.md : compteurs cumulés depuis le démarrage."""
+    message = build_heartbeat(events_sent=1234, uptime_seconds=3600)
+
+    assert message["type"] == "heartbeat"
+    assert message["timestamp"]  # horodatage renseigné par l'enveloppe
+    assert message["payload"] == {"events_sent": 1234, "uptime_seconds": 3600}

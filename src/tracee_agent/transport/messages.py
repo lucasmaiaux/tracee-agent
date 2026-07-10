@@ -104,3 +104,17 @@ def build_event(
         "metadata": {},
     }
     return envelope("event", payload)
+
+
+def build_heartbeat(events_sent: int, uptime_seconds: int) -> dict[str, object]:
+    """Construit un message ``heartbeat`` (voir PROTOCOL.md § heartbeat).
+
+    Signale que l'agent est vivant même sans trafic. Les deux compteurs sont cumulés
+    **depuis le démarrage de l'agent** (portée alignée sur ``uptime`` pour rester
+    cohérents) : ``events_sent`` = total d'events émis, ``uptime_seconds`` = âge du process.
+    """
+    payload: dict[str, object] = {
+        "events_sent": events_sent,
+        "uptime_seconds": uptime_seconds,
+    }
+    return envelope("heartbeat", payload)
