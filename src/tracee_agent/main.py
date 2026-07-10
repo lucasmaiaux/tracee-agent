@@ -140,9 +140,10 @@ async def _run(config: AgentConfig, interface: str | None) -> None:
         logger.error("capture_indisponible", erreur=str(exc))
         raise SystemExit(1) from None
 
-    # Trois tâches concurrentes : réseau (connexion), décodage/agrégation, flush périodique.
-    # On s'arrête dès que l'une se termine (ex. le serveur ferme la connexion) en annulant
-    # les autres ; la reconnexion automatique est le périmètre de l'US #19.
+    # Trois tâches concurrentes : réseau (connexion, avec reconnexion auto #19),
+    # décodage/agrégation, flush périodique. La connexion se relance seule à chaque
+    # coupure ; on ne s'arrête donc que si une tâche meurt (capture morte) ou si le serveur
+    # rejette l'agent définitivement (token/version) — d'où le FIRST_COMPLETED ci-dessous.
     tasks = [
         asyncio.create_task(connection.run()),
         asyncio.create_task(_consume(queue, aggregator, identifier, reassembler)),
