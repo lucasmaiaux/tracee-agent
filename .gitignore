@@ -1,8 +1,8 @@
 # ============================================
 # Instructions Claude Code (personnel)
 # ============================================
-CLAUDE.md
-.claude/
+# CLAUDE.md
+# .claude/
 
 # ============================================
 # Configuration locale (avec token agent)
