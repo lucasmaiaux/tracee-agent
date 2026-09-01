@@ -17,6 +17,10 @@ import scapy.arch  # noqa: F401 — charge le provider système qui peuple conf.
 from scapy.config import conf
 
 
+class InterfaceSelectionError(RuntimeError):
+    """Choix d'interface impossible : aucune interface, ou entrée non interactive."""
+
+
 @dataclass(frozen=True)
 class InterfaceInfo:
     """Interface réseau et ses adresses, telles que vues par Scapy."""
@@ -48,11 +52,54 @@ def list_interfaces() -> list[InterfaceInfo]:
     return infos
 
 
+def _format_line(info: InterfaceInfo) -> str:
+    addresses = ", ".join(info.ipv4 + info.ipv6) or "(aucune adresse)"
+    # Le nom à gauche, aligné, est celui à mettre dans capture.default_interface.
+    return f"{info.name:<24} {addresses}"
+
+
 def format_interfaces(infos: list[InterfaceInfo]) -> str:
     """Formate la liste en texte aligné, prêt à recopier dans la config."""
-    lines = []
-    for info in infos:
-        addresses = ", ".join(info.ipv4 + info.ipv6) or "(aucune adresse)"
-        # Le nom à gauche, aligné, est celui à mettre dans capture.default_interface.
-        lines.append(f"{info.name:<24} {addresses}")
-    return "\n".join(lines)
+    return "\n".join(_format_line(info) for info in infos)
+
+
+def prompt_interface(infos: list[InterfaceInfo]) -> str:
+    """Affiche la liste numérotée et renvoie le nom de l'interface choisie.
+
+    Le choix se fait par **numéro** et non par nom : sous Windows, les noms
+    d'interface contiennent espaces et parenthèses (``vEthernet (WSL (Hyper-V
+    firewall))``), inutilisables à la saisie.
+
+    Ce prompt vit dans l'agent plutôt que dans le Makefile parce que ``read`` est
+    un builtin POSIX, absent de cmd.exe : ``input`` fonctionne sur les trois
+    plateformes, et les utilisateurs finaux n'ont ni make ni shell POSIX.
+
+    Args:
+        infos: Interfaces proposées, dans l'ordre d'affichage.
+
+    Returns:
+        Le nom Scapy de l'interface choisie, tel qu'attendu par la capture.
+
+    Raises:
+        InterfaceSelectionError: Aucune interface, entrée non interactive (stdin
+            fermé, service systemd) ou saisie interrompue.
+    """
+    if not infos:
+        raise InterfaceSelectionError("aucune interface capturable détectée")
+
+    print("Interfaces capturables :")
+    for number, info in enumerate(infos, start=1):
+        print(f"  {number:>2}) {_format_line(info)}")
+
+    while True:
+        try:
+            answer = input(f"Interface à capturer [1-{len(infos)}] : ").strip()
+        except EOFError:
+            # Pas de terminal (pipe, service) : on refuse plutôt que de deviner.
+            raise InterfaceSelectionError("entrée non interactive") from None
+        except KeyboardInterrupt:
+            raise InterfaceSelectionError("choix interrompu") from None
+
+        if answer.isdigit() and 1 <= int(answer) <= len(infos):
+            return infos[int(answer) - 1].name
+        print(f"Choix invalide : entrer un numéro entre 1 et {len(infos)}.")

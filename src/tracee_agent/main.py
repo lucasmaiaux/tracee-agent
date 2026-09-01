@@ -5,7 +5,12 @@ import asyncio
 
 import structlog
 
-from tracee_agent.capture.interfaces import format_interfaces, list_interfaces
+from tracee_agent.capture.interfaces import (
+    InterfaceSelectionError,
+    format_interfaces,
+    list_interfaces,
+    prompt_interface,
+)
 from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.loader import ConfigError, load_config
 from tracee_agent.config.schema import AgentConfig
@@ -38,7 +43,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Lister les interfaces réseau capturables et quitter",
     )
-    parser.add_argument("--interface", help="Interface à capturer (surcharge la config)")
+    # Les deux façons de désigner l'interface s'excluent : l'une la nomme, l'autre
+    # la fait choisir. argparse rejette la combinaison avec un message clair.
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--interface", help="Interface à capturer (surcharge la config)")
+    selection.add_argument(
+        "--pick-interface",
+        action="store_true",
+        help="Choisir l'interface dans la liste, interactivement (surcharge la config)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Logs détaillés (DEBUG)")
     return parser.parse_args()
 
@@ -185,7 +198,15 @@ def main() -> None:
     level = "DEBUG" if args.verbose else config.logging.level
     configure_logging(level, config.logging.file)
 
-    interface = args.interface or config.capture.default_interface
+    if args.pick_interface:
+        try:
+            interface = prompt_interface(list_interfaces())
+        except InterfaceSelectionError as exc:
+            logger.error("selection_interface_impossible", erreur=str(exc))
+            raise SystemExit(2) from None
+    else:
+        interface = args.interface or config.capture.default_interface
+
     logger.info("agent_demarre", interface=interface, serveur=config.server.url)
 
     try:
