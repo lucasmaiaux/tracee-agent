@@ -8,4 +8,6 @@ capture:
 
 logging:
   level: "INFO"                # DEBUG | INFO | WARNING | ERROR | CRITICAL
-  file: "/var/log/tracee-agent.log" # null = stderr (dev) ;
+  file: null                   # null = stderr (dev) ; chemin = fichier (prod,
+                               # ex. /var/log/tracee-agent.log — le répertoire
+                               # doit exister et être accessible en écriture)

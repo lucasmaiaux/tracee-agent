@@ -63,7 +63,8 @@ capture:
 
 logging:
   level: "INFO"
-  file: "/var/log/tracee-agent.log"
+  file: null   # stderr ; pour écrire dans un fichier, donnez un chemin dont le
+               # répertoire existe déjà (ex. /var/log/tracee-agent.log)
 ```
 
 Le token est généré depuis le dashboard Tracee : Settings → Agents → Create Agent.
