@@ -118,13 +118,21 @@ La capture nécessite des privilèges élevés sur toutes les plateformes (root 
 
 ### Distribution
 
-Un **exécutable autonome par plateforme**, construit par PyInstaller et attaché à la release GitHub que déclenche un tag `vX.Y.Z` :
+Un **exécutable autonome par plateforme**, construit par PyInstaller et attaché à une release GitHub :
 
 - **Linux** : `tracee-agent-linux-x86_64`
 - **Windows** : `tracee-agent-windows-x86_64.exe`
 - **Python** : installation depuis les sources (`uv sync`), pour le développement
 
 Les paquets natifs (`.deb`, `.rpm`, `.pkg`) ont été **abandonnés** : ils ne suppriment pas le geste manuel qu'ils prétendaient éviter, puisque le token d'agent est généré à chaud sur le serveur et n'existe pas au moment de l'installation. C'est l'écran de configuration qui résout ce problème, pas le format de paquet.
+
+La publication se déclenche de trois manières équivalentes, servies par le même workflow (`.github/workflows/release.yml`) :
+
+- **Actions → Release → Run workflow**, en saisissant la version. Voie recommandée : le tag n'est posé qu'à la fin, donc un build en échec ne laisse pas de tag orphelin.
+- **Releases → Draft a new release** depuis l'interface. La release est publiée aussitôt, les binaires s'y attachent à la fin du build.
+- **`git push origin vX.Y.Z`**, la voie Git standard.
+
+Le job de publication crée la release ou complète celle qui existe déjà, ce qui rend ces trois voies interchangeables et permet de relancer un build sans conflit.
 
 PyInstaller **ne cross-compile pas** : chaque exécutable est construit sur un runner de son propre système (matrice `ubuntu-latest` + `windows-latest`). Npcap n'est pas embarquable dans le binaire pour des raisons de licence : c'est un prérequis à installer sur la machine Windows.
 

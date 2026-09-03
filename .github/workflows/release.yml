@@ -1,10 +1,18 @@
 name: Release
 
-# GitLab : `rules: - if: $CI_COMMIT_TAG`. Ici le déclencheur est déclaré en tête du
-# workflow plutôt que par job.
+# Deux déclencheurs pour un même travail :
+#   - un tag poussé (GitLab : `rules: - if: $CI_COMMIT_TAG`) — y compris le tag que
+#     GitHub crée quand on publie une release depuis « Releases → Draft a new release » ;
+#   - un lancement manuel depuis l'onglet Actions, qui évite toute manipulation de tag :
+#     `gh release create` le pose lui-même s'il n'existe pas.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à publier (ex. v0.1.0)"
+        required: true
 
 # Spécificité GitHub : le GITHUB_TOKEN est en lecture seule par défaut. Créer une
 # release exige de l'élever explicitement — il n'y a pas d'équivalent GitLab, où le
@@ -71,12 +79,19 @@ jobs:
           merge-multiple: true
 
       - name: Publish the GitHub release
-        # `gh` est préinstallé sur les runners : pas d'action tierce à faire confiance,
-        # et la même commande se rejoue à la main depuis un poste si la CI est indisponible.
+        # `gh` est préinstallé sur les runners : pas d'action tierce à qui faire confiance,
+        # et les mêmes commandes se rejouent à la main depuis un poste si besoin.
+        #
+        # Créer *ou* compléter : la release peut déjà exister — publiée depuis l'interface
+        # GitHub (qui pose le tag, donc déclenche ce workflow), ou laissée par une
+        # exécution précédente qu'on relance. `create` échouerait dans ces deux cas.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >
-          gh release create "$GITHUB_REF_NAME" artifacts/*
-          --repo "$GITHUB_REPOSITORY"
-          --title "$GITHUB_REF_NAME"
-          --generate-notes
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: |
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$VERSION" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$VERSION" artifacts/* \
+              --repo "$GITHUB_REPOSITORY" --title "$VERSION" --generate-notes
+          fi
