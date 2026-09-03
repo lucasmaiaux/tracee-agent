@@ -34,74 +34,106 @@ Composant client de [Tracee](https://github.com/lucasmaiaux/tracee). À installe
 
 ## Prérequis
 
-- **Python 3.12+**
-- **Privilèges réseau** : la capture nécessite des droits élevés (root sur Linux, admin sur Windows, ou setuid)
-- **Compte Tracee** sur le serveur, avec un agent enregistré (récupérez le token depuis le dashboard)
+Pour **utiliser** l'agent :
+
+- **Privilèges d'administration** : ouvrir un socket de capture est une opération privilégiée — root sous Linux, administrateur sous Windows.
+- **[Npcap](https://npcap.com/) sous Windows** : le pilote de capture. Sa licence interdit de l'embarquer dans l'exécutable, il s'installe donc séparément. Sans lui, la capture échoue quels que soient les privilèges.
+- **Un token d'agent**, généré sur la page Agents du serveur Tracee. Il n'existe pas avant : c'est pourquoi l'agent embarque un écran de configuration.
+
+Aucun Python n'est requis : l'exécutable est autonome.
+
+Pour **développer** :
+
+- **Python 3.12+** et [uv](https://docs.astral.sh/uv/)
+- **`python3-tk`** sous Debian/Ubuntu (`sudo apt install python3-tk`) : Tkinter dépend d'un paquet système séparé. Prérequis de développement uniquement — PyInstaller embarque Tcl/Tk dans l'exécutable.
 
 ## Installation
+
+### Exécutable autonome (recommandé)
+
+Télécharger le binaire de sa plateforme depuis les [Releases](https://github.com/lucasmaiaux/tracee-agent/releases), puis le placer dans un **dossier accessible en écriture** — Bureau ou Téléchargements. L'agent y écrit sa configuration ; un dossier protégé comme `C:\Program Files` ne conviendrait pas.
+
+```bash
+# Linux
+chmod +x tracee-agent-linux-x86_64
+sudo ./tracee-agent-linux-x86_64
+```
+
+Sous Windows : clic droit sur `tracee-agent-windows-x86_64.exe` → **Exécuter en tant qu'administrateur**.
 
 ### Depuis les sources
 
 ```bash
 git clone https://github.com/lucasmaiaux/tracee-agent.git
 cd tracee-agent
-pip install -e .
+uv sync
+make gui          # écran de configuration
+make build-exe    # construire l'exécutable de la plateforme courante
 ```
 
-### Configuration
+## Configuration
 
-Créez un fichier `config.yaml` dans le répertoire de l'agent :
+Lancé **sans argument**, l'agent ouvre son écran de configuration : coller le token, choisir l'interface, Démarrer. La configuration est enregistrée au premier démarrage et pré-remplie aux lancements suivants.
 
-```yaml
-server:
-  url: "wss://api.tracee.example.com/ws/agent"
-  token: "votre-token-agent-ici"
+L'URL du serveur n'y est pas saisissable — l'agent ne parle qu'au serveur Tracee, et l'adresse par défaut est intégrée. Elle reste modifiable dans le YAML pour un autre déploiement.
 
-capture:
-  default_interface: "wlan0"
-  snaplen: 512
+### Où vit le `config.yaml`
 
-logging:
-  level: "INFO"
-  file: null   # stderr ; pour écrire dans un fichier, donnez un chemin dont le
-               # répertoire existe déjà (ex. /var/log/tracee-agent.log)
-```
+| Mode d'exécution | Emplacement |
+|---|---|
+| Exécutable autonome | **à côté du binaire** |
+| Sources (`uv run`, `make`) | répertoire de travail courant |
 
-Le token est généré depuis le dashboard Tracee : Settings → Agents → Create Agent.
+À côté de l'exécutable, et non dans `~/.config` : sous `sudo`, `HOME` devient `/root`, et un fichier rangé dans le `~` de l'utilisateur ne serait pas relu par l'agent lancé en privilégié. Le fichier est aussi visible et supprimable, pour repartir de zéro.
+
+⚠️ Il contient le token d'agent en clair : ne pas le partager ni le committer (il est gitignoré).
+
+### Deux profils
+
+| Profil | Fichier | Usage |
+|---|---|---|
+| Normal | `config.yaml` | serveur Tracee |
+| Mise au point | `config.local.yaml` | backend lancé en local |
+
+La case **« Profil de mise au point »** bascule de l'un à l'autre. Ils sont séparés parce que leurs tokens diffèrent : un agent déclaré sur le backend local n'est pas celui du serveur distant.
+
+Pour un usage en ligne de commande, partir de `config.example.yaml`.
 
 ## Utilisation
 
-### Lancement basique
+### Écran de configuration
 
 ```bash
-# Linux/Mac (nécessite root pour la capture)
+sudo ./tracee-agent-linux-x86_64     # sans argument
+tracee-agent --gui                   # explicitement
+```
+
+### Ligne de commande
+
+Le chemin de développement et d'usage serveur. `--gui` est incompatible avec ces options.
+
+```bash
+tracee-agent --list-interfaces                                  # ne demande aucun privilège
 sudo tracee-agent --config config.yaml
-
-# Windows (lancer un terminal en administrateur)
-tracee-agent --config config.yaml
-```
-
-### Sélection d'interface
-
-```bash
 sudo tracee-agent --config config.yaml --interface eth0
+sudo tracee-agent --config config.yaml --pick-interface         # choix dans une liste
+sudo tracee-agent --config config.yaml --verbose                # logs DEBUG
 ```
 
-### Mode verbose
+### Capturer sans `sudo` sous Linux
+
+`sudo` n'est pas la seule voie : la capability `cap_net_raw` autorise un utilisateur ordinaire à ouvrir un socket de capture.
 
 ```bash
-sudo tracee-agent --config config.yaml --verbose
+sudo setcap cap_net_raw,cap_net_admin+ep ./tracee-agent-linux-x86_64
+./tracee-agent-linux-x86_64          # plus besoin de sudo
 ```
+
+C'est la manière recommandée pour l'écran de configuration sous Linux : selon la session graphique, `sudo` peut perdre l'accès au serveur d'affichage et empêcher la fenêtre de s'ouvrir. À poser sur l'exécutable autonome uniquement — jamais sur l'interpréteur Python d'un venv, qui rendrait privilégié n'importe quel script.
 
 ### Démarrage automatique (Linux, systemd)
 
-Un fichier de service est fourni dans `packaging/systemd/tracee-agent.service`. Adapter le chemin et activer :
-
-```bash
-sudo cp packaging/systemd/tracee-agent.service /etc/systemd/system/
-sudo systemctl enable tracee-agent
-sudo systemctl start tracee-agent
-```
+Pas encore fourni. En attendant, un service se déclare à la main en pointant l'exécutable et son `--config`.
 
 ## Sécurité et vie privée
 
@@ -131,9 +163,12 @@ La capture réseau est légale uniquement sur **votre propre réseau et vos prop
 
 ## Plateformes supportées
 
+Distribuées et testées :
+
 - Linux (Debian, Ubuntu, Fedora, Arch)
-- macOS (Intel et Apple Silicon)
-- Windows 10/11
+- Windows 10/11 — [Npcap](https://npcap.com/) requis
+
+macOS n'est pas une cible : aucun exécutable n'est publié et rien n'y est vérifié. Le code n'a pourtant rien de spécifique aux deux autres systèmes ; une installation depuis les sources a des chances de fonctionner, sans garantie.
 
 ## Développement
 

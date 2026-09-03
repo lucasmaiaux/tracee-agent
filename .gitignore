@@ -61,8 +61,10 @@ coverage.xml
 # ============================================
 # Packaging
 # ============================================
-# PyInstaller
+# PyInstaller : les .spec générés à la volée sont jetables, le nôtre est la recette
+# de build et doit suivre le code.
 *.spec
+!packaging/*.spec
 build/
 dist/
 

@@ -88,7 +88,8 @@ Voir le PROJECT.md du repo serveur pour le détail des couvertures et limitation
 | Géo / ASN | maxminddb | Lecture des bases MaxMind |
 | Logging | structlog | Logs structurés, modernes |
 | Tests | pytest + scapy | Tests unitaires sur PCAP de référence |
-| Packaging | pyinstaller, fpm | Build multi-plateformes |
+| Interface de configuration | Tkinter | Bibliothèque standard : aucune dépendance ajoutée |
+| Packaging | pyinstaller | Exécutable autonome Linux et Windows |
 
 ---
 
@@ -106,22 +107,34 @@ Voir [PROTOCOL.md](https://github.com/lucasmaiaux/tracee/blob/main/docs/PROTOCOL
 
 ## Plateformes supportées
 
-L'agent est écrit en Python pur et fonctionne sur :
+L'agent est écrit en Python pur. Deux plateformes sont **distribuées et testées** :
 
 - **Linux** : Debian/Ubuntu, Fedora, Arch
-- **macOS** : Intel et Apple Silicon
-- **Windows** : 10 et 11
+- **Windows** : 10 et 11 — nécessite [Npcap](https://npcap.com/) installé sur la machine
 
-La capture nécessite des privilèges élevés sur toutes les plateformes (root sur Linux, admin sur Windows).
+macOS n'est pas une cible : pas de machine de démonstration, et un runner macOS coûte dix fois les minutes CI d'un runner Linux. Le code n'a rien de spécifique à Linux ou Windows, mais rien n'y est vérifié.
+
+La capture nécessite des privilèges élevés sur toutes les plateformes (root sur Linux, administrateur sur Windows). Sous Linux, la capability `cap_net_raw` évite d'avoir à passer par `sudo`.
 
 ### Distribution
 
-Les releases GitHub fournissent :
+Un **exécutable autonome par plateforme**, construit par PyInstaller et attaché à une release GitHub :
 
-- **Linux** : paquets `.deb` (Debian/Ubuntu) et `.rpm` (Fedora/RHEL)
-- **macOS** : paquet `.pkg`
-- **Windows** : exécutable `.exe` (PyInstaller)
-- **Python** : paquet pip pour installation depuis sources
+- **Linux** : `tracee-agent-linux-x86_64`
+- **Windows** : `tracee-agent-windows-x86_64.exe`
+- **Python** : installation depuis les sources (`uv sync`), pour le développement
+
+Les paquets natifs (`.deb`, `.rpm`, `.pkg`) ont été **abandonnés** : ils ne suppriment pas le geste manuel qu'ils prétendaient éviter, puisque le token d'agent est généré à chaud sur le serveur et n'existe pas au moment de l'installation. C'est l'écran de configuration qui résout ce problème, pas le format de paquet.
+
+La publication se déclenche de trois manières équivalentes, servies par le même workflow (`.github/workflows/release.yml`) :
+
+- **Actions → Release → Run workflow**, en saisissant la version. Voie recommandée : le tag n'est posé qu'à la fin, donc un build en échec ne laisse pas de tag orphelin.
+- **Releases → Draft a new release** depuis l'interface. La release est publiée aussitôt, les binaires s'y attachent à la fin du build.
+- **`git push origin vX.Y.Z`**, la voie Git standard.
+
+Le job de publication crée la release ou complète celle qui existe déjà, ce qui rend ces trois voies interchangeables et permet de relancer un build sans conflit.
+
+PyInstaller **ne cross-compile pas** : chaque exécutable est construit sur un runner de son propre système (matrice `ubuntu-latest` + `windows-latest`). Npcap n'est pas embarquable dans le binaire pour des raisons de licence : c'est un prérequis à installer sur la machine Windows.
 
 ---
 

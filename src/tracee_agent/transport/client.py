@@ -37,14 +37,25 @@ _RECONNECT_BACKOFF_MAX_SECONDS = 60.0
 # Période d'émission du heartbeat : le signal de présence de l'agent (docs/PROTOCOL.md).
 _HEARTBEAT_INTERVAL_SECONDS = 30.0
 
-# Codes de fermeture applicatifs non récupérables (docs/PROTOCOL.md § codes de fermeture) :
-# hello invalide (4400), token rejeté (4401), version incompatible (4426). Réessayer
-# renverrait le même hello / token / version → on arrête l'agent plutôt que de boucler.
-_FATAL_CLOSE_CODES = frozenset({4400, 4401, 4426})
+# Codes de fermeture applicatifs non récupérables (docs/PROTOCOL.md § codes de fermeture).
+# Réessayer renverrait le même hello / token / version → on arrête l'agent plutôt que de
+# boucler. Chaque code porte sa traduction : c'est ce texte, et non le numéro, que voit
+# l'utilisateur de l'écran de paramètres.
+_FATAL_CLOSE_REASONS = {
+    4400: "Le serveur a refusé l'annonce de l'agent (hello invalide).",
+    4401: "Token d'agent refusé par le serveur.",
+    4426: "Version de protocole incompatible avec le serveur.",
+}
+_FATAL_CLOSE_CODES = frozenset(_FATAL_CLOSE_REASONS)
 
 
-class _FatalRejection(Exception):
-    """Refus applicatif non récupérable du serveur : inutile de reconnecter."""
+class ConnectionRejected(Exception):
+    """Refus applicatif non récupérable du serveur : inutile de reconnecter.
+
+    Remonte hors de ``run`` plutôt que d'y être avalée : un arrêt silencieux serait
+    indiscernable d'un arrêt demandé, et l'écran de paramètres n'aurait rien à afficher
+    alors que le token rejeté est l'incident le plus courant.
+    """
 
 
 class AgentConnection:
@@ -103,13 +114,13 @@ class AgentConnection:
         s'est établie — une coupure ponctuelle ne doit pas hériter d'un long délai, alors
         qu'un serveur injoignable fait espacer les tentatives. Un refus non récupérable
         (token/version) arrête l'agent : réessayer ne changerait rien.
+
+        Raises:
+            ConnectionRejected: Refus applicatif non récupérable (token, version, hello).
         """
         backoff = _RECONNECT_BACKOFF_INITIAL_SECONDS
         while True:
-            try:
-                established = await self._connect_and_serve()
-            except _FatalRejection:
-                return  # motif déjà journalisé ; on laisse l'agent s'arrêter proprement
+            established = await self._connect_and_serve()
             backoff = (
                 _RECONNECT_BACKOFF_INITIAL_SECONDS
                 if established
@@ -127,8 +138,8 @@ class AgentConnection:
             cas l'appelant espace les tentatives via le backoff.
 
         Raises:
-            _FatalRejection: refus applicatif non récupérable (token/version), à ne pas
-                retenter.
+            ConnectionRejected: refus applicatif non récupérable (token/version), à ne
+                pas retenter.
         """
         try:
             async with connect(self._url, additional_headers=self._headers()) as ws:
@@ -145,7 +156,7 @@ class AgentConnection:
             reason = close.reason if close is not None else None
             if code in _FATAL_CLOSE_CODES:
                 logger.error("connexion_refusee", code=code, raison=reason)
-                raise _FatalRejection from exc
+                raise ConnectionRejected(_FATAL_CLOSE_REASONS[code]) from exc
             logger.warning("connexion_fermee", code=code, raison=reason)
             return True  # elle était établie, elle est tombée → coupure normale
         except InvalidStatus as exc:
