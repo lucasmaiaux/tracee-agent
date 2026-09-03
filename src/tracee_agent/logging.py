@@ -51,12 +51,18 @@ def _escape_control_chars(_: object, __: str, event_dict: dict[str, object]) -> 
     return event_dict
 
 
-def configure_logging(level: str = "INFO", log_file: str | None = None) -> None:
+def configure_logging(
+    level: str = "INFO", log_file: str | None = None, *, quiet: bool = False
+) -> None:
     """Configure structlog pour tout l'agent (idempotent).
 
     Args:
         level: Niveau minimal ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
         log_file: Fichier de destination des logs ; stderr si None.
+        quiet: N'écrire nulle part. Réservé à l'écran de paramètres, qui annonce
+            lui-même les pannes exploitables : le terminal d'où on l'a lancé n'a pas
+            à se remplir d'un flux de services identifiés. ``log_file`` reste
+            prioritaire, et ``--verbose`` lève ce silence.
     """
     numeric_level = logging.getLevelNamesMapping()[level]
 
@@ -64,11 +70,14 @@ def configure_logging(level: str = "INFO", log_file: str | None = None) -> None:
     if log_file is not None:
         # Ouvert pour la durée de vie du process ; fermé à la sortie par l'OS.
         stream = open(log_file, "a", encoding="utf-8")  # noqa: SIM115
+    elif quiet:
+        stream = None
     if stream is None:
-        # Exécutable construit sans console : Windows ne fournit alors aucune sortie
-        # standard et `sys.stderr` vaut None. Journaliser dans le vide plutôt que de
-        # laisser structlog écrire sur None — l'exception tomberait au premier message,
-        # et il n'y aurait aucune console pour l'afficher.
+        # Deux chemins mènent ici : le silence demandé ci-dessus, et l'exécutable
+        # construit sans console — Windows ne fournit alors aucune sortie standard et
+        # `sys.stderr` vaut None. Journaliser dans le vide plutôt que de laisser
+        # structlog écrire sur None : l'exception tomberait au premier message, sans
+        # console pour l'afficher.
         stream = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
 
     # La console (terminal) privilégie la lisibilité ; un fichier privilégie un

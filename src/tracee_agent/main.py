@@ -65,11 +65,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verbose", action="store_true", help="Logs détaillés (DEBUG)")
     args = parser.parse_args()
 
-    # Lancement par double-clic sur l'exécutable : aucun argument, donc aucun terminal
-    # pour en saisir. C'est le parcours de démo, et il ouvre l'écran de paramètres.
-    if len(sys.argv) == 1:
-        args.gui = True
-
     # L'écran travaille sur ses propres profils et choisit lui-même l'interface : lui
     # passer ces options laisserait croire qu'elles sont prises en compte.
     conflicting = [
@@ -84,6 +79,13 @@ def parse_args() -> argparse.Namespace:
     ]
     if args.gui and conflicting:
         parser.error(f"--gui est incompatible avec {', '.join(conflicting)}")
+
+    # Aucune option de fond — le double-clic sur l'exécutable, ou un lancement à main
+    # nue : on ouvre l'écran de paramètres. Le critère porte sur ces options-là et non
+    # sur l'absence totale d'arguments, car `--verbose` ne désigne pas un mode ; il
+    # module celui qu'on a choisi, et doit pouvoir rendre l'écran bavard.
+    if not conflicting:
+        args.gui = True
 
     return args
 
@@ -103,6 +105,10 @@ def _open_settings_window(*, verbose: bool) -> None:
             indice="Tkinter manquant : installer python3-tk, ou lancer avec --config",
         )
         raise SystemExit(2) from None
+
+    # L'écran de paramètres ne bavarde pas dans le terminal d'où on l'a lancé : il
+    # annonce lui-même ce que l'utilisateur peut corriger. `--verbose` lève le silence.
+    configure_logging("DEBUG" if verbose else "INFO", quiet=not verbose)
 
     # Première question au diagnostic : où l'agent lit-il et écrit-il sa configuration ?
     # La réponse dépend du mode d'exécution, jamais du répertoire courant.

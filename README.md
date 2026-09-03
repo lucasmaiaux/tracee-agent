@@ -92,9 +92,15 @@ L'URL du serveur n'y est pas saisissable — l'agent ne parle qu'au serveur Trac
 
 ### Journalisation
 
-L'agent lancé par son écran de configuration **n'écrit aucun fichier de journal**. Les pannes sur lesquelles on peut agir — token refusé, capture impossible, privilèges manquants — sont annoncées dans la fenêtre ; le reste (paquets décodés, services identifiés) relève du développement, où l'on passe par la ligne de commande.
+L'agent lancé par son écran de configuration est **silencieux** : rien dans le terminal d'où on l'a lancé, aucune console sous Windows, aucun fichier de journal. Les pannes sur lesquelles on peut agir — token refusé, capture impossible, privilèges manquants — sont annoncées dans la fenêtre ; le reste (paquets décodés, services identifiés) relève du développement.
 
-Pour conserver une trace malgré tout, renseigner `logging.file` dans le `config.yaml` avec un chemin dont le répertoire existe déjà.
+Deux façons de retrouver la parole :
+
+```bash
+tracee-agent --verbose        # l'écran s'ouvre, et les logs reviennent dans le terminal
+```
+
+ou renseigner `logging.file` dans le `config.yaml`, avec un chemin dont le répertoire existe déjà.
 
 ### Deux profils
 

@@ -13,6 +13,10 @@ on:
       version:
         description: "Version à publier (ex. v0.1.0)"
         required: true
+      notes:
+        description: 'Notes de version (facultatif) — \n pour un saut de ligne'
+        required: false
+        default: ""
 
 # Spécificité GitHub : le GITHUB_TOKEN est en lecture seule par défaut. Créer une
 # release exige de l'élever explicitement — il n'y a pas d'équivalent GitLab, où le
@@ -98,14 +102,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.version || github.ref_name }}
+          # Ces valeurs transitent par l'environnement et ne sont jamais interpolées
+          # dans le script : une saisie de formulaire recollée dans du shell pourrait
+          # en sortir et exécuter ce qu'elle veut sur le runner.
+          NOTES: ${{ inputs.notes }}
         run: |
           if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Release déjà publiée — depuis l'interface GitHub, ou exécution relancée.
+            # On y ajoute les binaires sans toucher au texte, écrit ailleurs.
             gh release upload "$VERSION" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
+            exit 0
+          fi
+
+          if [ -n "$NOTES" ]; then
+            # `%b` interprète les \n : le formulaire de lancement n'offre qu'un champ
+            # d'une seule ligne, et c'est le seul moyen d'y écrire plusieurs paragraphes.
+            printf '%b' "$NOTES" > "$RUNNER_TEMP/notes.md"
+            gh release create "$VERSION" artifacts/* --repo "$GITHUB_REPOSITORY" \
+              --title "$VERSION" --notes-file "$RUNNER_TEMP/notes.md"
           else
-            # Notes laissées vides plutôt que dérivées des titres de PR : ceux-ci
-            # suivent la convention CPython (`gh-42: …`), écrits pour qui lit le code
-            # et non pour qui télécharge le binaire. Le texte de la release s'écrit à
-            # la main ensuite — les notes restent modifiables après publication.
+            # Sans texte fourni, la release n'a pas de description. On ne dérive rien
+            # des titres de PR : ils suivent la convention CPython (`gh-42: …`), écrits
+            # pour qui lit le code et non pour qui télécharge le binaire. Les notes
+            # restent modifiables après publication.
             gh release create "$VERSION" artifacts/* \
               --repo "$GITHUB_REPOSITORY" --title "$VERSION" --notes ""
           fi
