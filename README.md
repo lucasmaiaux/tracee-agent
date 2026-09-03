@@ -36,7 +36,7 @@ Composant client de [Tracee](https://github.com/lucasmaiaux/tracee). À installe
 
 Pour **utiliser** l'agent :
 
-- **Privilèges d'administration** : ouvrir un socket de capture est une opération privilégiée — root sous Linux, administrateur sous Windows.
+- **Privilèges d'administration** : ouvrir un socket de capture est une opération privilégiée — root sous Linux, administrateur sous Windows. Sous Windows, l'exécutable demande l'élévation de lui-même au lancement ; sous Linux, voir `setcap` ci-dessous.
 - **[Npcap](https://npcap.com/) sous Windows** : le pilote de capture. Sa licence interdit de l'embarquer dans l'exécutable, il s'installe donc séparément. Sans lui, la capture échoue quels que soient les privilèges.
 - **Un token d'agent**, généré sur la page Agents du serveur Tracee. Il n'existe pas avant : c'est pourquoi l'agent embarque un écran de configuration.
 
@@ -59,7 +59,9 @@ chmod +x tracee-agent-linux-x86_64
 sudo ./tracee-agent-linux-x86_64
 ```
 
-Sous Windows : clic droit sur `tracee-agent-windows-x86_64.exe` → **Exécuter en tant qu'administrateur**.
+Sous Windows, **double-cliquer** sur `tracee-agent-windows-x86_64.exe` : l'exécutable réclame lui-même l'élévation, Windows demande confirmation, et c'est tout.
+
+Les deux commandes Linux ne se font qu'**une fois par fichier téléchargé**. `chmod` parce qu'un fichier attaché à une release perd son bit exécutable en chemin ; `setcap` parce que le noyau refuse un socket de capture à un processus ordinaire — c'est une protection du système, qu'aucune application ne peut contourner d'elle-même. Wireshark impose la même chose. Le seul autre chemin est de préfixer chaque lancement par `sudo`.
 
 ### Depuis les sources
 

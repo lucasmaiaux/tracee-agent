@@ -15,9 +15,27 @@ from PyInstaller.utils.hooks import collect_submodules
 
 ROOT = Path(SPECPATH).parent  # noqa: F821 — injecté par PyInstaller
 
+# Tkinter est une liaison vers Tcl/Tk, livrée par un paquet système séparé
+# (`python3-tk` sous Debian/Ubuntu) absent des machines de construction par défaut.
+# Sans lui, PyInstaller ne signale rien et produit un exécutable **sans interface
+# graphique** : un échec ici vaut mieux qu'une release inutilisable.
+try:
+    import tkinter  # noqa: F401
+except ImportError as exc:
+    raise SystemExit(
+        "Tkinter introuvable : l'exécutable serait construit sans écran de "
+        "configuration.\nLinux : sudo apt install python3-tk"
+    ) from exc
+
 # Scapy charge ses couches par import dynamique (`conf.load_layers`) : l'analyse
 # statique de PyInstaller ne les voit pas, et le binaire perdrait les dissecteurs.
-hidden_imports = collect_submodules("scapy")
+# Tkinter y est déclaré explicitement : il n'est importé qu'à l'intérieur d'une
+# fonction, pour que la ligne de commande reste utilisable sans lui.
+hidden_imports = collect_submodules("scapy") + [
+    "tkinter",
+    "tkinter.ttk",
+    "tkinter.messagebox",
+]
 
 analysis = Analysis(  # noqa: F821
     [str(ROOT / "packaging" / "entrypoint.py")],
@@ -43,4 +61,9 @@ exe = EXE(  # noqa: F821
     # Console conservée : sans elle, un échec survenu avant l'ouverture de la fenêtre
     # (Npcap absent, bibliothèque manquante) ne laisserait aucune trace visible.
     console=True,
+    # Windows uniquement (ignoré ailleurs) : embarque un manifeste qui réclame
+    # l'élévation dès le lancement. Un double-clic suffit alors — Windows pose la
+    # question à l'utilisateur — au lieu d'exiger un « Exécuter en tant
+    # qu'administrateur » que rien ne rappelle à qui vient de télécharger le fichier.
+    uac_admin=True,
 )

@@ -47,8 +47,18 @@ jobs:
         with:
           enable-cache: true
 
+      # Tkinter est une liaison vers Tcl/Tk, livrée par un paquet système séparé et
+      # absente des runners Linux. Windows l'inclut d'office.
+      - name: Install Tcl/Tk (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y python3-tk
+
       - name: Install dependencies
         run: uv sync --frozen
+
+      # Échouer ici, et non trois étapes plus loin avec un binaire muet entre les mains.
+      - name: Check that Tkinter is available
+        run: uv run python -c "import tkinter; print('Tcl/Tk', tkinter.TkVersion)"
 
       - name: Build executable
         run: uv run pyinstaller --noconfirm --distpath dist --workpath build packaging/tracee-agent.spec
