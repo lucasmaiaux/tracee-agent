@@ -102,6 +102,10 @@ jobs:
           if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$VERSION" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
           else
+            # Notes laissées vides plutôt que dérivées des titres de PR : ceux-ci
+            # suivent la convention CPython (`gh-42: …`), écrits pour qui lit le code
+            # et non pour qui télécharge le binaire. Le texte de la release s'écrit à
+            # la main ensuite — les notes restent modifiables après publication.
             gh release create "$VERSION" artifacts/* \
-              --repo "$GITHUB_REPOSITORY" --title "$VERSION" --generate-notes
+              --repo "$GITHUB_REPOSITORY" --title "$VERSION" --notes ""
           fi

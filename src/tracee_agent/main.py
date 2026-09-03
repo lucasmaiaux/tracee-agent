@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import os
 import sys
 
 import structlog
@@ -20,6 +21,20 @@ from tracee_agent.runtime import run_agent
 from tracee_agent.transport.client import ConnectionRejected
 
 logger = structlog.get_logger("tracee_agent")
+
+
+def ensure_output_streams() -> None:
+    """Garantit des flux de sortie utilisables avant toute écriture.
+
+    Un exécutable construit sans console démarre sous Windows avec ``sys.stdout`` et
+    ``sys.stderr`` à ``None``. Le moindre ``print`` — celui de ``--list-interfaces``,
+    ou le message d'usage d'argparse — lèverait alors une exception, sans console pour
+    l'afficher. On substitue un puits une fois pour toutes, plutôt que de tester la
+    présence d'une sortie à chaque écriture.
+    """
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))  # noqa: SIM115
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,6 +111,7 @@ def _open_settings_window(*, verbose: bool) -> None:
 
 
 def main() -> None:
+    ensure_output_streams()  # avant argparse, qui écrit sur stdout et stderr
     args = parse_args()
     # Bootstrap : on ne connaît pas encore la config, on part d'un niveau par défaut
     # pour pouvoir déjà rapporter une éventuelle erreur de chargement.

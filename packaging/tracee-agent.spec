@@ -58,9 +58,12 @@ exe = EXE(  # noqa: F821
     # UPX économise quelques Mo au prix de faux positifs antivirus sous Windows et
     # d'un démarrage plus lent : sans intérêt ici.
     upx=False,
-    # Console conservée : sans elle, un échec survenu avant l'ouverture de la fenêtre
-    # (Npcap absent, bibliothèque manquante) ne laisserait aucune trace visible.
-    console=True,
+    # Sous-système graphique : aucune console, comme toute application de bureau. Sous
+    # Windows, le programme démarre alors sans sortie standard (`sys.stdout` et
+    # `sys.stderr` à None) — `main.ensure_output_streams` s'en charge avant la première
+    # écriture. Les erreurs sur lesquelles l'utilisateur peut agir passent par la
+    # fenêtre ; le diagnostic fin passe par la ligne de commande, en développement.
+    console=False,
     # Windows uniquement (ignoré ailleurs) : embarque un manifeste qui réclame
     # l'élévation dès le lancement. Un double-clic suffit alors — Windows pose la
     # question à l'utilisateur — au lieu d'exiger un « Exécuter en tant

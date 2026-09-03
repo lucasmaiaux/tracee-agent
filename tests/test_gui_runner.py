@@ -83,11 +83,44 @@ def test_capture_failure_is_reported_to_the_screen(runner, monkeypatch):
         raise CaptureError("Impossible de capturer sur 'lo'.")
 
     monkeypatch.setattr(gui_runner, "run_agent", refuse)
+    monkeypatch.setattr(gui_runner, "privilege_warning", lambda: None)
 
     runner.start(CONFIG, "lo")
     wait_until_stopped(runner)
 
     assert runner.take_error() == "Impossible de capturer sur 'lo'."
+
+
+def test_capture_failure_names_the_missing_privilege(runner, monkeypatch):
+    """Le conseil accompagne l'échec au lieu d'occuper la fenêtre en permanence."""
+
+    async def refuse(_config, _interface):
+        raise CaptureError("Impossible de capturer sur 'lo'.")
+
+    monkeypatch.setattr(gui_runner, "run_agent", refuse)
+    monkeypatch.setattr(gui_runner, "privilege_warning", lambda: "Relancer avec sudo.")
+
+    runner.start(CONFIG, "lo")
+    wait_until_stopped(runner)
+
+    error = runner.take_error()
+    assert "Impossible de capturer sur 'lo'." in error
+    assert "Relancer avec sudo." in error
+
+
+def test_a_rejected_token_carries_no_privilege_advice(runner, monkeypatch):
+    """Un token refusé n'a rien à voir avec les privilèges : pas de conseil hors sujet."""
+
+    async def reject(_config, _interface):
+        raise ConnectionRejected("Token d'agent refusé par le serveur.")
+
+    monkeypatch.setattr(gui_runner, "run_agent", reject)
+    monkeypatch.setattr(gui_runner, "privilege_warning", lambda: "Relancer avec sudo.")
+
+    runner.start(CONFIG, "lo")
+    wait_until_stopped(runner)
+
+    assert runner.take_error() == "Token d'agent refusé par le serveur."
 
 
 def test_a_rejected_token_is_named_rather_than_a_silent_stop(runner, monkeypatch):
