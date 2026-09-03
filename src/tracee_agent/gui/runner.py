@@ -19,6 +19,7 @@ import threading
 
 import structlog
 
+from tracee_agent.capture.privileges import privilege_warning
 from tracee_agent.capture.sniffer import CaptureError
 from tracee_agent.config.schema import AgentConfig
 from tracee_agent.runtime import run_agent
@@ -116,9 +117,13 @@ class AgentRunner:
             # marquée annulée et `asyncio.run` relève l'exception. Elle hérite de
             # BaseException, donc le `except Exception` ci-dessous ne la verrait pas.
             logger.info("agent_arrete")
-        except (CaptureError, ConnectionRejected) as exc:
-            # Les deux pannes que l'utilisateur peut corriger lui-même : mauvaise
-            # interface ou privilèges manquants d'un côté, token périmé de l'autre.
+        except CaptureError as exc:
+            # Première cause d'échec de capture, et de loin : les privilèges. Le geste
+            # attendu est joint ici plutôt qu'affiché en permanence dans la fenêtre —
+            # il arrive au moment où il sert, et non comme un avertissement de fond.
+            hint = privilege_warning()
+            self._error = str(exc) if hint is None else f"{exc}\n\n{hint}"
+        except ConnectionRejected as exc:
             self._error = str(exc)
         except Exception as exc:  # noqa: BLE001 — l'écran doit voir *toute* panne
             logger.exception("agent_arret_inattendu")

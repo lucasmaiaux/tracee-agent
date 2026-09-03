@@ -59,7 +59,7 @@ chmod +x tracee-agent-linux-x86_64
 sudo ./tracee-agent-linux-x86_64
 ```
 
-Sous Windows, **double-cliquer** sur `tracee-agent-windows-x86_64.exe` : l'exécutable réclame lui-même l'élévation, Windows demande confirmation, et c'est tout.
+Sous Windows, **double-cliquer** sur `tracee-agent-windows-x86_64.exe` : l'exécutable réclame lui-même l'élévation, Windows demande confirmation, et c'est tout. Aucune console ne s'ouvre — c'est une application graphique.
 
 Les deux commandes Linux ne se font qu'**une fois par fichier téléchargé**. `chmod` parce qu'un fichier attaché à une release perd son bit exécutable en chemin ; `setcap` parce que le noyau refuse un socket de capture à un processus ordinaire — c'est une protection du système, qu'aucune application ne peut contourner d'elle-même. Wireshark impose la même chose. Le seul autre chemin est de préfixer chaque lancement par `sudo`.
 
@@ -89,6 +89,12 @@ L'URL du serveur n'y est pas saisissable — l'agent ne parle qu'au serveur Trac
 À côté de l'exécutable, et non dans `~/.config` : sous `sudo`, `HOME` devient `/root`, et un fichier rangé dans le `~` de l'utilisateur ne serait pas relu par l'agent lancé en privilégié. Le fichier est aussi visible et supprimable, pour repartir de zéro.
 
 ⚠️ Il contient le token d'agent en clair : ne pas le partager ni le committer (il est gitignoré).
+
+### Journalisation
+
+L'agent lancé par son écran de configuration **n'écrit aucun fichier de journal**. Les pannes sur lesquelles on peut agir — token refusé, capture impossible, privilèges manquants — sont annoncées dans la fenêtre ; le reste (paquets décodés, services identifiés) relève du développement, où l'on passe par la ligne de commande.
+
+Pour conserver une trace malgré tout, renseigner `logging.file` dans le `config.yaml` avec un chemin dont le répertoire existe déjà.
 
 ### Deux profils
 

@@ -7,6 +7,7 @@ désigne ce fichier.
 """
 
 import logging
+import os
 import sys
 from datetime import datetime
 from typing import TextIO
@@ -59,10 +60,16 @@ def configure_logging(level: str = "INFO", log_file: str | None = None) -> None:
     """
     numeric_level = logging.getLevelNamesMapping()[level]
 
-    stream: TextIO = sys.stderr
+    stream: TextIO | None = sys.stderr
     if log_file is not None:
         # Ouvert pour la durée de vie du process ; fermé à la sortie par l'OS.
         stream = open(log_file, "a", encoding="utf-8")  # noqa: SIM115
+    if stream is None:
+        # Exécutable construit sans console : Windows ne fournit alors aucune sortie
+        # standard et `sys.stderr` vaut None. Journaliser dans le vide plutôt que de
+        # laisser structlog écrire sur None — l'exception tomberait au premier message,
+        # et il n'y aurait aucune console pour l'afficher.
+        stream = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
 
     # La console (terminal) privilégie la lisibilité ; un fichier privilégie un
     # format machine stable (ISO, UTC) pour le grep et l'agrégation.

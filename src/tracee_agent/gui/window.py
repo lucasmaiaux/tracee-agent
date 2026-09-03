@@ -20,7 +20,6 @@ from tkinter import messagebox, ttk
 import structlog
 
 from tracee_agent.capture.interfaces import InterfaceInfo, list_interfaces
-from tracee_agent.capture.privileges import privilege_warning
 from tracee_agent.config.writer import ConfigWriteError
 from tracee_agent.gui.runner import AgentRunner
 from tracee_agent.gui.settings import (
@@ -43,8 +42,6 @@ _POLL_INTERVAL_MS = 500
 
 # Délai laissé à l'agent pour libérer l'interface quand on ferme la fenêtre.
 _SHUTDOWN_TIMEOUT_SECONDS = 3.0
-
-_WARNING_COLOR = "#b00020"
 
 
 class SettingsWindow:
@@ -108,25 +105,20 @@ class SettingsWindow:
 
         self._debug_box = ttk.Checkbutton(
             frame,
-            text="Profil de mise au point (backend local)",
+            text="Mode DEBUG (localhost)",
             variable=self._debug,
             command=self._load_profile,
         )
         self._debug_box.grid(row=3, column=1, columnspan=2, sticky="w", pady=(8, 4))
 
-        warning = privilege_warning()
-        if warning is not None:
-            # Avertissement et non blocage : sous Linux, `setcap` permet de capturer
-            # sans être root, et le seul juge fiable reste l'ouverture du socket.
-            ttk.Label(
-                frame, text=warning, foreground=_WARNING_COLOR, justify="left", wraplength=440
-            ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 4))
-
+        # Pas d'avertissement permanent sur les privilèges : l'écran ne montre que ce
+        # qu'il y a à renseigner. Le geste attendu est joint au message d'échec de la
+        # capture, qui est le moment où il sert (voir `AgentRunner`).
         self._action_button = ttk.Button(frame, text="Démarrer", command=self._on_action)
-        self._action_button.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 4))
+        self._action_button.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 4))
 
         ttk.Label(frame, textvariable=self._status, justify="left", wraplength=440).grid(
-            row=6, column=0, columnspan=3, sticky="w"
+            row=5, column=0, columnspan=3, sticky="w"
         )
 
     # --- Chargement et rafraîchissement ---------------------------------------------
