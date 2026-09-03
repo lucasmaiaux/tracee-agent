@@ -1,4 +1,4 @@
-.PHONY: sync interfaces dev dev-all local-dev local-dev-all lint format test
+.PHONY: sync interfaces gui dev dev-all local-dev local-dev-all lint format test build-exe
 
 # Config utilisée par dev/dev-all. Surchargeable : make dev-all CONFIG=config.local.yaml
 CONFIG ?= config.yaml
@@ -36,6 +36,13 @@ sync:             ## Créer/actualiser le venv depuis uv.lock (idempotent)
 interfaces: sync  ## Lister les interfaces réseau capturables
 	@$(AGENT) --list-interfaces
 
+gui: sync         ## Ouvrir l'écran de paramètres (token, interface, démarrer/arrêter)
+# Volontairement sans $(SUDO) : sous X11, sudo perd l'accès au serveur d'affichage
+# (XAUTHORITY) et la fenêtre refuserait de s'ouvrir. L'écran signale lui-même le manque
+# de privilèges. Pour capturer réellement en dev, utiliser `make dev` (ligne de
+# commande) ou poser la capability sur le binaire construit : voir le README.
+	@$(AGENT) --gui
+
 dev: sync         ## Capturer en INFO : affiche les domaines SNI détectés (root/admin)
 	$(SUDO) $(AGENT) --config $(CONFIG) $(if $(IFACE),--interface "$(IFACE)",--pick-interface) $(OPTS)
 
@@ -59,11 +66,7 @@ format:           ## Formater + corriger automatiquement
 test:             ## Lancer les tests
 	uv run pytest
 
-trace1: sync
-	$(SUDO) $(PYTHON) scripts_temp/explore_capture.py
-
-trace2: sync
-	$(SUDO) $(PYTHON) scripts_temp/explore_capture2.py
-
-trace3: sync
-	$(SUDO) $(PYTHON) scripts_temp/explore_sni.py
+build-exe: sync   ## Construire l'exécutable autonome dans dist/ (plateforme courante)
+# PyInstaller ne cross-compile pas : cette cible produit un binaire pour le système sur
+# lequel elle tourne. Les deux cibles de distribution viennent de la matrice CI.
+	uv run pyinstaller --noconfirm --distpath dist --workpath build packaging/tracee-agent.spec

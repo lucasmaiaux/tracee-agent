@@ -1,0 +1,82 @@
+name: Release
+
+# GitLab : `rules: - if: $CI_COMMIT_TAG`. Ici le déclencheur est déclaré en tête du
+# workflow plutôt que par job.
+on:
+  push:
+    tags: ["v*"]
+
+# Spécificité GitHub : le GITHUB_TOKEN est en lecture seule par défaut. Créer une
+# release exige de l'élever explicitement — il n'y a pas d'équivalent GitLab, où le
+# token du job porte déjà les droits du déclencheur.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Executable (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # PyInstaller ne cross-compile pas : chaque cible exige un runner de son système.
+      # Sans `fail-fast: false`, un échec côté Windows annulerait le build Linux, et on
+      # se retrouverait sans aucun binaire — précisément ce qu'on veut éviter.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            built: dist/tracee-agent
+            asset: tracee-agent-linux-x86_64
+          - os: windows-latest
+            label: Windows
+            built: dist/tracee-agent.exe
+            asset: tracee-agent-windows-x86_64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Build executable
+        run: uv run pyinstaller --noconfirm --distpath dist --workpath build packaging/tracee-agent.spec
+
+      - name: Name the asset after its platform
+        # Git Bash est présent sur les runners Windows : l'imposer évite d'écrire la
+        # même étape deux fois, une pour sh et une pour PowerShell.
+        shell: bash
+        run: mv "${{ matrix.built }}" "${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          # Un binaire absent doit faire échouer le job ici, pas produire une release vide.
+          if-no-files-found: error
+
+  release:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      # Contrairement à GitLab, les artefacts des jobs précédents ne sont pas récupérés
+      # automatiquement : il faut les redemander.
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish the GitHub release
+        # `gh` est préinstallé sur les runners : pas d'action tierce à faire confiance,
+        # et la même commande se rejoue à la main depuis un poste si la CI est indisponible.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" artifacts/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes

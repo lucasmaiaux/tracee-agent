@@ -13,10 +13,11 @@ refus fatal (token/version), qui lui arrête l'agent (``run()`` rend la main).
 import asyncio
 import json
 
+import pytest
 from websockets.asyncio.server import serve
 
 from tracee_agent.config.schema import ServerConfig
-from tracee_agent.transport.client import AgentConnection
+from tracee_agent.transport.client import AgentConnection, ConnectionRejected
 
 
 def _port(server) -> int:
@@ -104,7 +105,12 @@ async def test_buffer_jette_les_plus_anciens(monkeypatch):
 
 
 async def test_arret_sur_refus_fatal():
-    """Un refus non récupérable (token rejeté, code 4401) arrête l'agent : run() se termine."""
+    """Un refus non récupérable (token rejeté, 4401) arrête l'agent en disant pourquoi.
+
+    Le motif doit **remonter** et non rester dans les logs : sans lui, l'écran de
+    paramètres ne saurait distinguer un token périmé d'un arrêt demandé, et le cas le
+    plus courant en démonstration passerait inaperçu.
+    """
 
     async def handler(connection):
         # Le serveur accepte la WS puis la ferme avec un code applicatif fatal, comme le
@@ -114,7 +120,8 @@ async def test_arret_sur_refus_fatal():
     server = await serve(handler, "localhost", 0)
     try:
         # run() DOIT se terminer de lui-même : sinon ce wait_for lèverait TimeoutError.
-        await asyncio.wait_for(AgentConnection(_config(server)).run(), timeout=5)
+        with pytest.raises(ConnectionRejected, match="Token d'agent refusé"):
+            await asyncio.wait_for(AgentConnection(_config(server)).run(), timeout=5)
     finally:
         server.close()
         await server.wait_closed()

@@ -1,13 +1,21 @@
+# Modèle de configuration de l'agent Tracee.
+#
+# Ce fichier n'est utile qu'en développement, ou pour un agent piloté en ligne de
+# commande. Lancé sans argument, l'agent ouvre un écran de configuration qui écrit
+# lui-même son `config.yaml` à côté de l'exécutable : rien à recopier à la main.
+#
+# Copie : cp config.example.yaml config.yaml  (config.yaml est gitignoré : il porte le token)
+
 server:
-  url: "wss://api.tracee.example.com/ws/agent"
-  token: "votre-token-agent-ici"
+  url: "wss://tracee.lucas-maiaux.fr/ws/agent"
+  token: "votre-token-agent-ici" # généré sur la page Agents du serveur
 
 capture:
-  default_interface: "wlan0"   # surchargé par --interface
-  snaplen: 512
+  default_interface: "wlan0" # surchargé par --interface ; `--list-interfaces` donne les noms
+  snaplen: 1600 # trame Ethernet complète : capture tout le ClientHello (SNI)
 
 logging:
-  level: "INFO"                # DEBUG | INFO | WARNING | ERROR | CRITICAL
-  file: null                   # null = stderr (dev) ; chemin = fichier (prod,
-                               # ex. /var/log/tracee-agent.log — le répertoire
-                               # doit exister et être accessible en écriture)
+  level: "INFO" # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  file: null # null = stderr (dev) ; chemin = fichier (prod,
+    # ex. /var/log/tracee-agent.log — le répertoire
+    # doit exister et être accessible en écriture)
