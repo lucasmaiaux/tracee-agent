@@ -34,6 +34,28 @@ def test_journalisation_sans_sortie_standard(monkeypatch, capsys):
     monkeypatch.setattr(sys, "stderr", None)
 
     configure_logging("INFO")
-    structlog.get_logger("test").info("agent_demarre", interface="eno1")
+    structlog.get_logger("sans_sortie").info("agent_demarre", interface="eno1")
 
-    assert capsys.readouterr().out == ""
+    sortie = capsys.readouterr()
+    assert sortie.out == ""
+    assert sortie.err == ""
+
+
+def test_ecran_de_parametres_ne_remplit_pas_le_terminal(capsys):
+    """Lancé depuis un terminal, l'écran de paramètres n'y déverse rien."""
+    configure_logging("INFO", quiet=True)
+    structlog.get_logger("silencieux").info("service_identifie", service="netflix.com")
+
+    sortie = capsys.readouterr()
+    assert sortie.out == ""
+    assert sortie.err == ""
+
+
+def test_le_silence_cede_devant_un_fichier_de_destination(tmp_path):
+    """`logging.file` reste prioritaire : demander un fichier, c'est vouloir la trace."""
+    journal = tmp_path / "tracee-agent.log"
+
+    configure_logging("INFO", str(journal), quiet=True)
+    structlog.get_logger("vers_fichier").info("capture_demarree", source="eno1")
+
+    assert "capture_demarree" in journal.read_text(encoding="utf-8")

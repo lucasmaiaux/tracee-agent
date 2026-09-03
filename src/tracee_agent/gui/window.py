@@ -180,8 +180,14 @@ class SettingsWindow:
             return
 
         # Même règle qu'en ligne de commande : le profil fixe le niveau et la
-        # destination des logs, `--verbose` garde la priorité.
-        configure_logging("DEBUG" if self._verbose else config.logging.level, config.logging.file)
+        # destination des logs, `--verbose` garde la priorité. Sans fichier ni
+        # `--verbose`, la capture reste silencieuse : c'est le serveur qui montre le
+        # trafic, pas le terminal.
+        configure_logging(
+            "DEBUG" if self._verbose else config.logging.level,
+            config.logging.file,
+            quiet=not self._verbose,
+        )
 
         interface = config.capture.default_interface
         assert interface is not None  # garanti par build_config
