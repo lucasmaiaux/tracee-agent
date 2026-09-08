@@ -20,6 +20,7 @@ from tkinter import messagebox, ttk
 import structlog
 
 from tracee_agent.capture.interfaces import InterfaceInfo, list_interfaces
+from tracee_agent.capture.sniffer import link_layer, link_layer_warning
 from tracee_agent.config.writer import ConfigWriteError
 from tracee_agent.gui.runner import AgentRunner
 from tracee_agent.gui.settings import (
@@ -47,7 +48,7 @@ _SHUTDOWN_TIMEOUT_SECONDS = 3.0
 class SettingsWindow:
     """Saisie du token, choix de l'interface, démarrage et arrêt de la capture."""
 
-    def __init__(self, root: tk.Tk, *, verbose: bool = False) -> None:
+    def __init__(self, root: tk.Tk, *, verbose: bool = False, debug_profile: bool = False) -> None:
         self._root = root
         self._runner = AgentRunner()
         self._verbose = verbose
@@ -56,7 +57,10 @@ class SettingsWindow:
         self._server = tk.StringVar()
         self._token = tk.StringVar()
         self._interface = tk.StringVar()
-        self._debug = tk.BooleanVar(value=False)
+        # Le profil est choisi au lancement (`--debug-profile`, cf. `make gui-local`) et
+        # non mémorisé entre deux ouvertures : l'écran sert d'abord à poser un agent sur
+        # une machine, où le profil de mise au point n'a pas à être un état rémanent.
+        self._debug = tk.BooleanVar(value=debug_profile)
         self._show_token = tk.BooleanVar(value=False)
         self._status = tk.StringVar(value="Agent à l'arrêt.")
 
@@ -191,9 +195,18 @@ class SettingsWindow:
 
         interface = config.capture.default_interface
         assert interface is not None  # garanti par build_config
+
+        # Interrogé ici, avant le démarrage : on ne tient jamais deux sockets d'écoute
+        # à la fois, et l'avertissement paraît dès le clic. Le passer par le thread de
+        # travail coûterait un canal de plus pour un message qui ne dépend que de
+        # l'interface choisie — que l'écran connaît déjà.
+        notice = link_layer_warning(link_layer(interface))
+
         self._runner.start(config, interface)
         self._set_running(True)
-        self._status.set(f"Capture en cours sur {interface}.")
+        # L'avertissement prime sur le rappel de routine : le bouton « Arrêter » dit
+        # déjà que la capture tourne, alors que ceci ne se lit nulle part ailleurs.
+        self._status.set(notice or f"Capture en cours sur {interface}.")
 
     def _stop(self) -> None:
         # Sans attente : le clic ne doit pas figer la fenêtre. L'arrêt effectif est
@@ -238,8 +251,8 @@ class SettingsWindow:
         self._root.destroy()
 
 
-def run(*, verbose: bool = False) -> None:
+def run(*, verbose: bool = False, debug_profile: bool = False) -> None:
     """Ouvre l'écran de paramètres et rend la main à sa fermeture."""
     root = tk.Tk()
-    SettingsWindow(root, verbose=verbose)
+    SettingsWindow(root, verbose=verbose, debug_profile=debug_profile)
     root.mainloop()

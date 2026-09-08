@@ -37,8 +37,13 @@ _MAX_BUFFER = 16640
 _MAX_FLOWS = 1024
 
 
-def _starts_client_hello(payload: bytes) -> bool:
-    """Vrai si le segment débute un ClientHello (record handshake + type 0x01)."""
+def starts_client_hello(payload: bytes) -> bool:
+    """Vrai si le segment débute un ClientHello (record handshake + type 0x01).
+
+    Public parce que les compteurs de santé s'en servent : rapporter les
+    ClientHello **vus** face aux SNI **extraits** est ce qui rend visible une
+    identification en panne. Dupliquer la règle ailleurs la ferait diverger.
+    """
     return len(payload) >= 6 and payload[0] == _TLS_HANDSHAKE and payload[5] == _CLIENT_HELLO
 
 
@@ -67,7 +72,7 @@ class ClientHelloReassembler:
         buffer = self._pending.get(flow)
         if buffer is None:
             # Nouveau flux : on ne le suit que s'il amorce un ClientHello.
-            if not _starts_client_hello(payload):
+            if not starts_client_hello(payload):
                 return None
             buffer = payload
         else:

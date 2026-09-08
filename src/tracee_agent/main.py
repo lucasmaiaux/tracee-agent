@@ -62,6 +62,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Ouvrir l'écran de paramètres (par défaut si aucun argument n'est fourni)",
     )
+    parser.add_argument(
+        "--debug-profile",
+        action="store_true",
+        help="Ouvrir l'écran sur le profil de mise au point (config.local.yaml, backend local)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Logs détaillés (DEBUG)")
     args = parser.parse_args()
 
@@ -79,6 +84,11 @@ def parse_args() -> argparse.Namespace:
     ]
     if args.gui and conflicting:
         parser.error(f"--gui est incompatible avec {', '.join(conflicting)}")
+    # --debug-profile ne désigne qu'un profil *de l'écran*. En ligne de commande, le
+    # profil se choisit déjà par `--config config.local.yaml` : accepter les deux
+    # laisserait croire à un réglage qui ne serait jamais lu.
+    if args.debug_profile and conflicting:
+        parser.error(f"--debug-profile est incompatible avec {', '.join(conflicting)}")
 
     # Aucune option de fond — le double-clic sur l'exécutable, ou un lancement à main
     # nue : on ouvre l'écran de paramètres. Le critère porte sur ces options-là et non
@@ -90,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _open_settings_window(*, verbose: bool) -> None:
+def _open_settings_window(*, verbose: bool, debug_profile: bool) -> None:
     """Ouvre l'écran de paramètres, en signalant proprement un Tkinter absent.
 
     L'import est fait ici et non en tête de module : Tkinter dépend du paquet système
@@ -113,7 +123,7 @@ def _open_settings_window(*, verbose: bool) -> None:
     # Première question au diagnostic : où l'agent lit-il et écrit-il sa configuration ?
     # La réponse dépend du mode d'exécution, jamais du répertoire courant.
     logger.info("ecran_parametres", dossier_de_configuration=str(app_dir()))
-    run(verbose=verbose)
+    run(verbose=verbose, debug_profile=debug_profile)
 
 
 def main() -> None:
@@ -129,7 +139,7 @@ def main() -> None:
         return
 
     if args.gui:
-        _open_settings_window(verbose=args.verbose)
+        _open_settings_window(verbose=args.verbose, debug_profile=args.debug_profile)
         return
 
     if args.config is None:

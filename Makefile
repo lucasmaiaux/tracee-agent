@@ -1,4 +1,4 @@
-.PHONY: sync interfaces gui dev dev-all local-dev local-dev-all lint format test build-exe
+.PHONY: sync interfaces gui gui-local dev dev-all local-dev local-dev-all lint format test build-exe
 
 # Config utilisée par dev/dev-all. Surchargeable : make dev-all CONFIG=config.local.yaml
 CONFIG ?= config.yaml
@@ -42,6 +42,11 @@ gui: sync         ## Ouvrir l'écran de paramètres (token, interface, démarrer
 # de privilèges. Pour capturer réellement en dev, utiliser `make dev` (ligne de
 # commande) ou poser la capability sur le binaire construit : voir le README.
 	@$(AGENT) --gui
+
+gui-local: sync   ## Comme gui, mais sur le profil de mise au point (config.local.yaml)
+# Évite d'avoir à recocher « Mode DEBUG » — et donc de repartir du profil de production —
+# à chaque ouverture de l'écran pendant le développement.
+	@$(AGENT) --gui --debug-profile
 
 dev: sync         ## Capturer en INFO : affiche les domaines SNI détectés (root/admin)
 	$(SUDO) $(AGENT) --config $(CONFIG) $(if $(IFACE),--interface "$(IFACE)",--pick-interface) $(OPTS)

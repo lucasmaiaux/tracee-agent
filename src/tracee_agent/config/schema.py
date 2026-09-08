@@ -14,10 +14,12 @@ class ServerConfig(BaseModel):
 class CaptureConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     default_interface: str | None = None
-    # 1600 : couvre une trame Ethernet à MTU pleine (1514) + marge VLAN, pour
-    # capturer tout le ClientHello TLS / la requête DNS sans tronquer le SNI ;
-    # reste loin des 65535 pour ne pas capturer les gros transferts en entier.
-    snaplen: int = Field(default=1600, gt=0)  # > 0 sinon erreur
+    # 4096 : il faut tenir un ClientHello entier, seul porteur du SNI. Une trame
+    # Ethernet pleine (1514) n'y suffit plus — l'échange de clés post-quantique
+    # (X25519MLKEM768) porte le ClientHello des navigateurs à ~2000 octets, que la
+    # segmentation déléguée à la carte (TSO/LSO) livre d'un seul bloc à la capture.
+    # Reste loin des 65535 pour ne pas capturer les gros transferts en entier.
+    snaplen: int = Field(default=4096, gt=0)  # > 0 sinon erreur
 
 
 class LoggingConfig(BaseModel):

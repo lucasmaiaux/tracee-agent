@@ -14,6 +14,12 @@ from __future__ import annotations
 import asyncio
 
 import structlog
+from scapy.config import conf
+
+# Importé pour lui-même, mais aussi pour l'effet de bord : charger ce module peuple
+# la table `conf.l2types` (link type → classe de dissection) dont dépend l'inspection
+# ci-dessous. Sans elle, Scapy ne sait pas résoudre le lien et rend un objet bidon.
+from scapy.layers.l2 import Ether
 from scapy.packet import Packet
 from scapy.sendrecv import AsyncSniffer
 
@@ -22,6 +28,64 @@ logger = structlog.get_logger("tracee_agent.capture")
 # Délai laissé au thread Scapy pour échouer à l'ouverture du socket (interface
 # invalide / droits insuffisants) avant qu'on considère la capture démarrée.
 _STARTUP_GRACE_SECONDS = 0.2
+
+
+def link_layer_warning(layer: object | None) -> str | None:
+    """Message d'alerte si la couche liaison n'est pas celle qu'on sait décoder.
+
+    Le décodeur appelle ``Ether(data)`` : il attend des trames Ethernet, et lirait
+    de travers tout autre format (un VPN en mode TUN livre de l'IP nue, une capture
+    de bouclage a son propre en-tête, un lien PPP aussi). L'agent capturerait alors
+    sans jamais rien produire.
+
+    Args:
+        layer: Classe de dissection retenue par Scapy pour ce lien, ou ``None`` si on
+            n'a pas réussi à l'établir. Volontairement typé large : quand Scapy ne
+            sait pas résoudre le lien, il ne rend pas ``None`` mais un objet qui n'est
+            **pas une classe**, au nom trompeur de ``Raw``. Le prendre pour une couche
+            ferait crier au loup sur toutes les cartes Ethernet — d'où le filtre
+            ``isinstance`` ci-dessous, placé ici parce que c'est ici qu'on décide
+            d'alerter.
+
+    Returns:
+        Le constat puis le geste attendu, en **deux lignes** — l'écran de paramètres
+        l'affiche tel quel dans une bande de statut étroite. ``None`` quand il n'y a
+        rien à signaler : lien Ethernet, ou type indéterminé (on ne crie pas sur une
+        incertitude).
+    """
+    if layer is None or layer is Ether or not isinstance(layer, type):
+        return None
+    return (
+        f"Lien non-Ethernet ({layer.__name__}) : rien ne sera décodé.\n"
+        "Choisir une carte Ethernet ou Wi-Fi."
+    )
+
+
+def link_layer(interface: str) -> object | None:
+    """Couche de liaison que Scapy emploierait pour ``interface``, telle quelle.
+
+    Ouvre un socket d'écoute le temps de lire la classe déduite du *link type*, puis
+    le referme. Le sniffer ne l'expose pas (il garde ses sockets dans une variable
+    locale), d'où cette ouverture séparée, faite **avant** la capture pour ne jamais
+    tenir deux handles à la fois.
+
+    Publique parce que l'écran de paramètres s'en sert aussi : il avertit au clic,
+    avant même que la capture démarre, plutôt que d'attendre un message qui devrait
+    traverser le thread de travail.
+
+    Best-effort : un diagnostic ne doit pas empêcher de capturer. Un échec
+    d'ouverture (droits insuffisants, interface disparue) rend ``None`` — la vraie
+    capture dira elle-même ce qui ne va pas. On ne filtre pas ici ce que Scapy
+    renvoie : l'interprétation revient à ``link_layer_warning``.
+    """
+    try:
+        socket = conf.L2listen(iface=interface)
+    except Exception:  # noqa: BLE001 — inspection facultative, jamais bloquante
+        return None
+    try:
+        return getattr(socket, "LL", None)
+    finally:
+        socket.close()
 
 
 class CaptureError(RuntimeError):
@@ -70,6 +134,16 @@ class PacketCapture:
         self._loop = self._loop or asyncio.get_running_loop()
 
         source = f"pcap:{self._pcap_file}" if self._pcap_file else self._interface
+        # Vérifié avant d'ouvrir la capture, et seulement sur une interface réelle : un
+        # PCAP rejoué vient de nos propres tests, son format est connu.
+        if self._interface is not None and self._pcap_file is None:
+            warning = link_layer_warning(link_layer(self._interface))
+            if warning is not None:
+                # Le message est mis en forme pour un écran (deux lignes) ; un log tient
+                # sur une seule, sans quoi il se coupe en deux entrées à la lecture.
+                motif = warning.replace("\n", " ")
+                logger.warning("lien_non_ethernet", interface=self._interface, motif=motif)
+
         kwargs: dict[str, object] = {"prn": self._on_packet, "store": False}
         if self._pcap_file is not None:
             kwargs["offline"] = self._pcap_file

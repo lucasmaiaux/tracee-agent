@@ -11,6 +11,17 @@ Les tailles sont lues dans les en-têtes IP/transport (``Total Length`` IPv4,
 ``Payload Length`` IPv6, ``data offset`` TCP) et non via ``len(data)`` : ces
 champs décrivent le paquet **réel sur le fil**, alors que ``len(data)`` est
 faussé dès que ``snaplen`` écrête la trame.
+
+**Sauf quand l'en-tête n'est pas encore rempli.** Avec le *TCP Segmentation
+Offload* (TSO/LSO), la pile de l'OS ne segmente plus elle-même : elle remet à la
+carte réseau un bloc de plusieurs Ko coiffé d'un en-tête « gabarit », dont la
+longueur est laissée à **0** — c'est le NIC qui découpera et renseignera le champ
+juste avant l'émission. Or on capture *en amont* du pilote (NDIS sous Windows,
+qdisc sous Linux) : on voit donc ce bloc avec sa longueur à zéro. Faire confiance
+à l'en-tête donnerait alors une charge utile vide, et ferait disparaître
+silencieusement tout le trafic **émis** volumineux — au premier rang duquel le
+ClientHello TLS, seul porteur du SNI. Dans ce cas précis, seuls les octets
+réellement présents font foi.
 """
 
 from __future__ import annotations
@@ -29,6 +40,10 @@ logger = structlog.get_logger("tracee_agent.parser")
 
 _IPV6_HEADER_LEN = 40  # en-tête IPv6 de base, fixe (RFC 8200 §3)
 _UDP_HEADER_LEN = 8  # en-tête UDP, fixe (RFC 768)
+
+# Numéros IANA des deux transports qu'on sait disséquer, pour la redissection IPv6.
+_IP_PROTO_TCP = 6
+_IP_PROTO_UDP = 17
 
 # Numéro de protocole IP (registre IANA) → nom lisible, pour les flux IP dépourvus
 # de couche transport TCP/UDP. Table explicite plutôt que /etc/protocols : le nom
@@ -65,9 +80,9 @@ def parse_packet(data: bytes) -> ParsedPacket | None:
     if ip is None:
         return None  # non-IP (ARP, etc.) : hors périmètre, ignoré silencieusement
 
-    packet_size = _packet_size(ip)
+    declared_size = _declared_size(ip)
 
-    transport, protocol = _transport_layer(packet)
+    transport, protocol = _transport_layer(packet, ip)
     if transport is None:
         # Flux IP sans couche transport TCP/UDP : ICMP/ESP/GRE/SCTP, protocole
         # inconnu, ou fragment non initial / snaplen trop court qui masque l'en-tête
@@ -79,15 +94,27 @@ def parse_packet(data: bytes) -> ParsedPacket | None:
             dest_ip=ip.dst,
             dest_port=None,
             protocol=_ip_protocol(ip),
-            packet_size=packet_size,
+            packet_size=declared_size or _ip_header_len(ip) + len(bytes(ip.payload)),
             payload_size=0,
             payload=b"",
+            offloaded=not declared_size,
         )
 
-    payload_size = max(0, packet_size - _ip_header_len(ip) - _l4_header_len(transport))
-    # On écrête à payload_size pour retirer un éventuel bourrage Ethernet : une
-    # trame < 64 octets est complétée par des zéros que Scapy expose en Padding.
-    payload = bytes(transport.payload)[:payload_size]
+    headers_size = _ip_header_len(ip) + _l4_header_len(transport)
+    if declared_size:
+        packet_size = declared_size
+        payload_size = max(0, packet_size - headers_size)
+        # On écrête à payload_size pour retirer un éventuel bourrage Ethernet : une
+        # trame < 64 octets est complétée par des zéros que Scapy expose en Padding.
+        payload = bytes(transport.payload)[:payload_size]
+    else:
+        # Segmentation déléguée à la carte (TSO/LSO, cf. en-tête de module) : la
+        # longueur annoncée ne veut rien dire, on s'en tient aux octets capturés.
+        # Pas de bourrage à écrêter ici — il ne complète que les trames de moins de
+        # 60 octets, ce qu'un bloc remis à l'offload n'est jamais.
+        payload = bytes(transport.payload)
+        payload_size = len(payload)
+        packet_size = headers_size + payload_size
 
     return ParsedPacket(
         source_ip=ip.src,
@@ -98,6 +125,7 @@ def parse_packet(data: bytes) -> ParsedPacket | None:
         packet_size=packet_size,
         payload_size=payload_size,
         payload=payload,
+        offloaded=not declared_size,
     )
 
 
@@ -127,21 +155,51 @@ def _ip_protocol(ip: Packet) -> str:
 
 
 def _transport_layer(
-    packet: Packet,
+    packet: Packet, ip: Packet
 ) -> tuple[Packet, Literal["tcp", "udp"]] | tuple[None, None]:
     """Retourne la couche transport et son nom, ou ``(None, None)`` si ni TCP ni UDP."""
     if TCP in packet:
         return packet[TCP], "tcp"
     if UDP in packet:
         return packet[UDP], "udp"
+    # IPv6 dont ``Payload Length`` est resté à 0 (TSO/LSO) : Scapy s'arrête à
+    # l'en-tête fixe — la longueur annoncée ne laisse rien à disséquer — et expose
+    # le reste en bloc opaque. On redissèque d'après ``Next Header``, faute de quoi
+    # tout le trafic v6 émis volumineux passerait pour « sans couche transport ».
+    # L'équivalent IPv4 n'est pas nécessaire : Scapy y dissèque malgré le zéro.
+    if isinstance(ip, IPv6) and ip.plen == 0:
+        return _redissect(bytes(ip.payload), ip.nh)
     return None, None
 
 
-def _packet_size(ip: Packet) -> int:
-    """Taille réelle du datagramme IP sur le fil, en octets (snaplen ignoré)."""
+def _redissect(
+    rest: bytes, next_header: int
+) -> tuple[Packet, Literal["tcp", "udp"]] | tuple[None, None]:
+    """Dissèque à la main une charge IPv6 que Scapy a laissée opaque."""
+    layer = {_IP_PROTO_TCP: TCP, _IP_PROTO_UDP: UDP}.get(next_header)
+    if layer is None or not rest:
+        return None, None
+    try:
+        transport = layer(rest)
+    except Exception:  # noqa: BLE001 — mêmes octets aberrants que dans parse_packet
+        return None, None
+    return transport, ("tcp" if next_header == _IP_PROTO_TCP else "udp")
+
+
+def _declared_size(ip: Packet) -> int:
+    """Taille du datagramme IP annoncée dans l'en-tête, ou ``0`` si non renseignée.
+
+    Un zéro n'est pas une taille : c'est le marqueur d'un en-tête que la pile a
+    laissé incomplet parce que la carte réseau finira le travail (TSO/LSO, cf.
+    en-tête de module). L'appelant se rabat alors sur les octets capturés.
+
+    En IPv6, ``plen`` à 0 désigne aussi, légalement, un jumbogramme (RFC 2675) —
+    dont la vraie taille vit dans une option Hop-by-Hop. Cas quasi introuvable hors
+    réseaux HPC, et le repli sur les octets capturés y reste le moins faux.
+    """
     if isinstance(ip, IPv6):
         # plen ne compte que ce qui suit l'en-tête fixe : on le rajoute.
-        return _IPV6_HEADER_LEN + ip.plen
+        return _IPV6_HEADER_LEN + ip.plen if ip.plen else 0
     return ip.len  # IPv4 Total Length = en-tête + données (RFC 791)
 
 
