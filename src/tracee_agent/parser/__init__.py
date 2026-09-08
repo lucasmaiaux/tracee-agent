@@ -3,7 +3,7 @@
 from tracee_agent.parser.decoder import parse_packet
 from tracee_agent.parser.dns import DnsMessage, DnsRecord, parse_dns
 from tracee_agent.parser.models import ParsedPacket
-from tracee_agent.parser.tls_reassembly import ClientHelloReassembler
+from tracee_agent.parser.tls_reassembly import ClientHelloReassembler, starts_client_hello
 
 __all__ = [
     "ClientHelloReassembler",
@@ -12,4 +12,5 @@ __all__ = [
     "ParsedPacket",
     "parse_dns",
     "parse_packet",
+    "starts_client_hello",
 ]

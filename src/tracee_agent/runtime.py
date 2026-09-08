@@ -13,8 +13,14 @@ import structlog
 from tracee_agent.capture.sniffer import CaptureError, PacketCapture
 from tracee_agent.config.schema import AgentConfig
 from tracee_agent.flow import FlowAggregator
+from tracee_agent.health import PipelineHealth
 from tracee_agent.identifier import ServiceIdentifier
-from tracee_agent.parser import ClientHelloReassembler, parse_dns, parse_packet
+from tracee_agent.parser import (
+    ClientHelloReassembler,
+    parse_dns,
+    parse_packet,
+    starts_client_hello,
+)
 from tracee_agent.transport.client import AgentConnection
 from tracee_agent.transport.messages import build_event
 
@@ -28,12 +34,19 @@ _QUEUE_MAXSIZE = 10_000
 # Fenêtre courte = globe temps réel (l'équivalent d'un « active timeout » NetFlow court).
 _FLUSH_INTERVAL_SECONDS = 2.0
 
+# Période du rapport de santé. Assez espacée pour ne pas noyer les logs, assez
+# fréquente pour qu'une capture de démonstration en produise plusieurs.
+_HEALTH_INTERVAL_SECONDS = 60.0
+
 
 async def _consume(
     queue: asyncio.Queue[bytes],
     aggregator: FlowAggregator,
     identifier: ServiceIdentifier,
     reassembler: ClientHelloReassembler,
+    *,
+    health: PipelineHealth,
+    snaplen: int,
 ) -> None:
     """Décode chaque paquet, l'agrège dans son flux, alimente l'identification et journalise.
 
@@ -44,12 +57,22 @@ async def _consume(
 
     Journalisation d'observation : un log DEBUG par paquet décodé (mode ``--verbose`` /
     ``dev-all``) et un log INFO à chaque nouveau SNI détecté (mode ``dev``).
+
+    C'est aussi ici que se comptent les pertes du pipeline (``health``) : décodage,
+    troncature, offload, ClientHello vus contre SNI extraits.
     """
     while True:
         data = await queue.get()
+        # La capture rend la trame écrêtée à snaplen : une taille pile à la limite
+        # signale, sauf coïncidence, qu'il en manquait la fin.
+        if len(data) >= snaplen:
+            health.frames_truncated += 1
         packet = parse_packet(data)
         if packet is None:
+            health.frames_ignored += 1
             continue
+        health.packets_decoded += 1
+        health.headers_offloaded += packet.offloaded
         aggregator.add(packet)
         logger.debug(
             "paquet_decode",
@@ -66,14 +89,17 @@ async def _consume(
             message = parse_dns(packet.payload)
             if message is not None:
                 identifier.observe_dns(message)
+                health.dns_answers += bool(message.answers)
 
         # Identification par SNI : un ClientHello TLS révèle le domaine visé,
         # éventuellement reconstitué à partir de plusieurs segments. On mémorise le SNI
         # pour tout le flux ; il sera résolu au flush (SNI > DNS) via ``identifier.resolve``.
         if packet.protocol == "tcp" and packet.payload:
+            health.client_hellos += starts_client_hello(packet.payload)
             flow = (packet.source_ip, packet.source_port, packet.dest_ip, packet.dest_port)
             sni = reassembler.feed(flow, packet.payload)
             if sni is not None:
+                health.services_identified += 1
                 identifier.observe_sni(flow, sni)
                 # Nouveau SNI détecté → une ligne INFO (comportement dev historique).
                 logger.info(
@@ -89,6 +115,8 @@ async def _flush_loop(
     identifier: ServiceIdentifier,
     connection: AgentConnection,
     interface: str,
+    *,
+    health: PipelineHealth,
 ) -> None:
     """Transforme périodiquement les flux accumulés en events prêts à envoyer.
 
@@ -101,7 +129,21 @@ async def _flush_loop(
         for record in aggregator.flush():
             flow = (record.source_ip, record.source_port, record.dest_ip, record.dest_port)
             hint = identifier.resolve(flow)
+            health.events += 1
+            health.events_identified += hint is not None
             connection.enqueue_event(build_event(interface, record, hint))
+
+
+async def _health_loop(health: PipelineHealth, identifier: ServiceIdentifier) -> None:
+    """Publie périodiquement l'état du pipeline (voir ``health.py``).
+
+    Un seul log, structuré, plutôt qu'une métrique par compteur : ce qui se lit, ce
+    sont les **rapports** entre eux — des ClientHello sans SNI, des trames toutes
+    écrêtées, des events sans identification.
+    """
+    while True:
+        await asyncio.sleep(_HEALTH_INTERVAL_SECONDS)
+        logger.info("sante_pipeline", **health.report(dns_cache_size=identifier.dns_cache_size))
 
 
 async def run_agent(config: AgentConfig, interface: str | None) -> None:
@@ -132,18 +174,32 @@ async def run_agent(config: AgentConfig, interface: str | None) -> None:
     # flux + cache DNS observé), alimentés par _consume et consultés par _flush_loop.
     identifier = ServiceIdentifier()
     reassembler = ClientHelloReassembler()
+    health = PipelineHealth()
     # Échec ici (interface absente, droits insuffisants) : `CaptureError` remonte à
     # l'appelant, déjà journalisée par `PacketCapture.start`.
     capture.start()
 
-    # Trois tâches concurrentes : réseau (connexion, avec reconnexion auto #19),
-    # décodage/agrégation, flush périodique. La connexion se relance seule à chaque
-    # coupure ; on ne s'arrête donc que si une tâche meurt (capture morte) ou si le serveur
-    # rejette l'agent définitivement (token/version) — d'où le FIRST_COMPLETED ci-dessous.
+    # Quatre tâches concurrentes : réseau (connexion, avec reconnexion auto #19),
+    # décodage/agrégation, flush périodique, rapport de santé. La connexion se relance
+    # seule à chaque coupure ; on ne s'arrête donc que si une tâche meurt (capture morte)
+    # ou si le serveur rejette l'agent définitivement (token/version) — d'où le
+    # FIRST_COMPLETED ci-dessous.
     tasks = [
         asyncio.create_task(connection.run()),
-        asyncio.create_task(_consume(queue, aggregator, identifier, reassembler)),
-        asyncio.create_task(_flush_loop(aggregator, identifier, connection, interface)),
+        asyncio.create_task(
+            _consume(
+                queue,
+                aggregator,
+                identifier,
+                reassembler,
+                health=health,
+                snaplen=config.capture.snaplen,
+            )
+        ),
+        asyncio.create_task(
+            _flush_loop(aggregator, identifier, connection, interface, health=health)
+        ),
+        asyncio.create_task(_health_loop(health, identifier)),
     ]
     try:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

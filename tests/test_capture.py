@@ -10,10 +10,12 @@ from pathlib import Path
 
 import pytest
 from scapy.layers.inet import IP, TCP, UDP
-from scapy.layers.l2 import Ether
+from scapy.layers.inet6 import IPv46
+from scapy.layers.l2 import CookedLinux, Ether, Loopback
+from scapy.packet import Packet
 from scapy.utils import wrpcap
 
-from tracee_agent.capture.sniffer import CaptureError, PacketCapture
+from tracee_agent.capture.sniffer import CaptureError, PacketCapture, link_layer_warning
 
 
 def _write_pcap(tmp_path: Path, packets: list) -> str:
@@ -58,6 +60,43 @@ def test_snaplen_ecrete_les_paquets(tmp_path):
     received = asyncio.run(_drain(pcap, snaplen=64, expected=1))
 
     assert len(received[0]) == 64  # conservé = snaplen, pas la trame entière
+
+
+@pytest.mark.parametrize("layer", [Loopback, CookedLinux, IPv46])
+def test_lien_non_ethernet_est_signale(layer: type):
+    # VPN en mode TUN (IPv46 : de l'IP nue), bouclage (Loopback), capture Linux « any »
+    # (CookedLinux) : le décodeur appelle Ether(data) et lirait ces octets de travers.
+    # Sans ce message, l'agent capturerait sans rien produire, et sans rien dire.
+    message = link_layer_warning(layer)
+
+    assert message is not None
+    assert layer.__name__ in message
+
+
+@pytest.mark.parametrize("layer", [Loopback, CookedLinux, IPv46])
+def test_l_avertissement_tient_en_deux_lignes(layer: type):
+    # Il s'affiche dans la bande de statut de l'écran de paramètres, qui est étroite :
+    # au-delà de deux lignes, il pousse le reste de la fenêtre.
+    lines = link_layer_warning(layer).splitlines()
+
+    assert len(lines) == 2
+    assert all(len(line) <= 60 for line in lines)  # tient sans repli dans la bande
+
+
+def test_lien_ethernet_ne_dit_rien():
+    assert link_layer_warning(Ether) is None
+
+
+def test_lien_indetermine_ne_dit_rien():
+    # L'inspection est facultative : ne pas savoir n'est pas une raison d'alerter.
+    assert link_layer_warning(None) is None
+
+
+def test_resolution_ratee_de_scapy_ne_declenche_pas_de_fausse_alerte():
+    # Quand Scapy ne sait pas résoudre le lien, il ne rend pas None mais un objet
+    # qui n'est pas une classe, au nom trompeur de « Raw ». Le prendre pour une
+    # couche ferait crier au loup sur toutes les cartes Ethernet.
+    assert link_layer_warning(Packet.name) is None
 
 
 def test_interface_invalide_leve_capture_error():

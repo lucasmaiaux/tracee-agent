@@ -11,8 +11,10 @@ from scapy.layers.inet import ICMP, IP, TCP, UDP
 from scapy.layers.inet6 import ICMPv6EchoRequest, IPv6
 from scapy.layers.l2 import ARP, Ether
 from scapy.packet import Raw
+from tls_fixtures import client_hello
 
 from tracee_agent.parser import parse_packet
+from tracee_agent.parser.tls_reassembly import ClientHelloReassembler
 
 # Longueurs d'en-tête (octets) rappelées ici pour des assertions lisibles.
 # packet_size décrit le datagramme IP : l'en-tête Ethernet n'y entre pas.
@@ -100,6 +102,65 @@ def test_ack_nu_ecrete_le_bourrage_ethernet():
 
 def test_octets_aberrants_ne_crashent_pas():
     assert parse_packet(b"\x00\x01\x02\x03") is None
+
+
+# --- Segmentation déléguée à la carte réseau (TSO/LSO) ---------------------------
+# La pile remet au NIC un bloc de plusieurs Ko avec une longueur laissée à 0, que le
+# NIC renseignera en segmentant. On capture en amont : lire l'en-tête donnerait une
+# charge utile vide et ferait disparaître tout le trafic émis volumineux — dont le
+# ClientHello, seul porteur du SNI. Le repli sur les octets capturés est donc vital.
+
+
+def test_tso_ipv4_longueur_a_zero_conserve_le_payload():
+    payload = b"\x16\x03\x01" + b"y" * 1997  # ~2 Ko, gabarit d'un ClientHello moderne
+    # len=0 force le champ Total Length à zéro là où Scapy le calculerait.
+    frame = bytes(Ether() / IP(len=0) / TCP(sport=54321, dport=443) / payload)
+
+    result = parse_packet(frame)
+
+    assert result is not None
+    assert result.payload == payload
+    assert result.payload_size == len(payload)
+    assert result.packet_size == _IPV4_HEADER + _TCP_HEADER + len(payload)
+
+
+def test_tso_ipv6_longueur_a_zero_conserve_le_payload():
+    payload = b"\x16\x03\x01" + b"z" * 1997
+    frame = bytes(Ether() / IPv6(plen=0) / TCP(sport=54321, dport=443) / payload)
+
+    result = parse_packet(frame)
+
+    assert result is not None
+    assert result.payload == payload
+    assert result.payload_size == len(payload)
+    assert result.packet_size == _IPV6_HEADER + _TCP_HEADER + len(payload)
+
+
+def test_tso_sans_couche_transport_garde_une_taille_plausible():
+    # Même en-tête incomplet, mais sur un flux sans ports (ESP d'un tunnel VPN) :
+    # il doit rester un arc de taille non nulle, pas un paquet de 0 octet.
+    body = b"\x00" * 2000
+    frame = bytes(Ether() / IP(len=0, proto=50) / Raw(body))
+
+    result = parse_packet(frame)
+
+    assert result is not None
+    assert result.protocol == "esp"
+    assert result.packet_size == _IPV4_HEADER + len(body)
+
+
+def test_clienthello_tso_traverse_le_pipeline_jusquau_sni():
+    # Test de bout en bout du cas réel : un ClientHello complet livré d'un bloc par
+    # l'offload doit encore livrer son SNI au réassembleur.
+    hello = client_hello(server_name="www.exemple.fr")
+    frame = bytes(Ether() / IP(len=0) / TCP(sport=54321, dport=443) / hello)
+
+    result = parse_packet(frame)
+
+    assert result is not None
+    reassembler = ClientHelloReassembler()
+    flow = (result.source_ip, result.source_port, result.dest_ip, result.dest_port)
+    assert reassembler.feed(flow, result.payload) == "www.exemple.fr"
 
 
 # --- Flux IP sans couche transport TCP/UDP (US #27) ------------------------------

@@ -30,7 +30,9 @@ class ParsedPacket:
     l'en-tête IP (``Total Length``), toujours présent même quand la capture est
     écrêtée par ``snaplen``. ``payload`` ne contient, lui, que les octets
     réellement capturés — donc ``len(payload) <= payload_size`` en cas de
-    troncature.
+    troncature. Seule exception, quand la carte réseau a la charge de segmenter
+    (TSO/LSO) : la longueur annoncée vaut alors 0 et les tailles se déduisent des
+    octets capturés, ce qui sous-estime le paquet si ``snaplen`` l'a écrêté.
 
     Attributes:
         source_ip: Adresse IP source (IPv4 ou IPv6, forme texte).
@@ -47,6 +49,11 @@ class ParsedPacket:
             ne délimite pas de charge L7 pour ces flux (pas d'identification).
         payload: Octets de la charge applicative réellement capturés. Point
             d'entrée du parsing manuel (TLS/SNI, DNS). Vide (``b""``) hors TCP/UDP.
+        offloaded: L'en-tête IP annonçait une longueur nulle — segmentation
+            déléguée à la carte (TSO/LSO). Les tailles ci-dessus sont alors
+            déduites des octets capturés. Remonté pour être *compté* : c'est le
+            signal qui distingue « cette machine n'a pas de trafic » de « cette
+            machine a un offload qui nous cache son trafic émis ».
     """
 
     source_ip: str
@@ -57,3 +64,4 @@ class ParsedPacket:
     packet_size: int
     payload_size: int
     payload: bytes
+    offloaded: bool = False

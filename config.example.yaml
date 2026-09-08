@@ -12,7 +12,7 @@ server:
 
 capture:
   default_interface: "wlan0" # surchargé par --interface ; `--list-interfaces` donne les noms
-  snaplen: 1600 # trame Ethernet complète : capture tout le ClientHello (SNI)
+  snaplen: 4096 # doit tenir un ClientHello entier (~2000 o en post-quantique) : c'est lui qui porte le SNI
 
 logging:
   level: "INFO" # DEBUG | INFO | WARNING | ERROR | CRITICAL

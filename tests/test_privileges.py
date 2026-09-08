@@ -32,7 +32,10 @@ def posix(monkeypatch: pytest.MonkeyPatch):
 
     def _simulate(euid: int) -> None:
         monkeypatch.setattr(sys, "platform", "linux")
-        monkeypatch.setattr(os, "geteuid", lambda: euid)
+        # `os.geteuid` est absent sous Windows : on le crée (raising=False), comme la
+        # fixture `windows` le fait pour `ctypes.windll`. Sans cela ces tests ne seraient
+        # verts que sur la CI Linux, et resteraient rouges sur un poste de dev Windows.
+        monkeypatch.setattr(os, "geteuid", lambda: euid, raising=False)
 
     return _simulate
 

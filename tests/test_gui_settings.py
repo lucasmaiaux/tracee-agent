@@ -149,7 +149,7 @@ def test_settings_untouched_by_the_screen_survive(profiles_folder):
 def test_defaults_apply_when_there_is_no_previous_profile():
     config = build_config(_VALID)
 
-    assert config.capture.snaplen == 1600
+    assert config.capture.snaplen == 4096
     assert config.logging.level == "INFO"
 
 

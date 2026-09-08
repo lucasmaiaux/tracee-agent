@@ -73,6 +73,11 @@ class ServiceIdentifier:
         self._sni_by_flow: OrderedDict[FlowKey, str] = OrderedDict()
         self._max_flows = max_flows
 
+    @property
+    def dns_cache_size(self) -> int:
+        """Nombre d'associations IP → domaine apprises (pour les compteurs de santé)."""
+        return len(self._dns_cache)
+
     def observe_dns(self, message: DnsMessage) -> None:
         """Alimente le cache DNS avec les résolutions d'un message DNS observé."""
         self._dns_cache.observe(message)
