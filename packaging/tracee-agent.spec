@@ -41,6 +41,8 @@ analysis = Analysis(  # noqa: F821
     [str(ROOT / "packaging" / "entrypoint.py")],
     pathex=[str(ROOT / "src")],
     hiddenimports=hidden_imports,
+    # Icône de la fenêtre, lue à côté de son module : même chemin relatif dans le binaire.
+    datas=[(str(ROOT / "src" / "tracee_agent" / "gui" / "tracee.png"), "tracee_agent/gui")],
     excludes=["pytest", "_pytest", "ruff"],
 )
 
@@ -53,6 +55,10 @@ exe = EXE(  # noqa: F821
     analysis.datas,
     [],
     name="tracee-agent",
+    # Icône du fichier (Explorateur, raccourcis) : le logo de Tracee, en 16/32/48/64 px
+    # tirés de `src/tracee_agent/gui/tracee.png`. Windows seulement, ignorée sous Linux
+    # où un exécutable ne porte pas d'icône.
+    icon=str(ROOT / "packaging" / "tracee.ico"),
     debug=False,
     strip=False,
     # UPX économise quelques Mo au prix de faux positifs antivirus sous Windows et

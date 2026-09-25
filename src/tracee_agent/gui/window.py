@@ -15,6 +15,7 @@ et n'est observé qu'à travers ``AgentRunner``, interrogé par un ``after()`` p
 from __future__ import annotations
 
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 import structlog
@@ -35,7 +36,27 @@ from tracee_agent.logging import configure_logging
 
 logger = structlog.get_logger("tracee_agent.gui")
 
-_TITLE = "Tracee — Agent de capture"
+_TITLE = "Tracee"
+
+# Logo de Tracee (favicon du serveur), pour la barre de titre et la barre des tâches.
+# PNG et non SVG : Tk 8.6 ne lit pas le SVG. Posé à côté du module, il est trouvé
+# aussi bien depuis les sources que dans l'exécutable (voir `datas` dans le .spec).
+_ICON_PATH = Path(__file__).with_name("tracee.png")
+
+# Largeur des champs, en caractères : assez pour lire en entier le libellé d'une
+# interface sous Windows (nom descriptif + adresses IPv4 et IPv6). La liste déroulante
+# de la combobox prend la largeur du champ, elle n'a pas de réglage propre.
+_FIELD_WIDTH_CHARS = 70
+# Retour à la ligne du message d'état, en pixels : un peu moins que la largeur utile de
+# la fenêtre (marges et pastille déduites), pour qu'une longue erreur ne l'élargisse pas.
+_STATUS_WRAP_PX = 560
+
+# Pastille d'état : mêmes teintes que les états du serveur (`--good` / `--crit` du
+# thème clair de l'interface web), pour qu'un vert et un rouge disent la même chose
+# des deux côtés.
+_DOT_SIZE_PX = 10
+_DOT_RUNNING_COLOR = "#158a35"
+_DOT_STOPPED_COLOR = "#c93636"
 
 # Cadence d'observation du runner : assez courte pour que la reprise de la main après
 # un arrêt paraisse immédiate, assez longue pour rester sans effet sur la charge.
@@ -75,6 +96,10 @@ class SettingsWindow:
 
     def _build(self) -> None:
         self._root.title(_TITLE)
+        # Référence gardée : sans elle, l'image serait libérée par le ramasse-miettes.
+        # `True` l'étend aux fenêtres filles (boîtes de dialogue d'erreur).
+        self._icon = tk.PhotoImage(file=str(_ICON_PATH))
+        self._root.iconphoto(True, self._icon)
         self._root.resizable(False, False)
 
         frame = ttk.Frame(self._root, padding=16)
@@ -88,8 +113,10 @@ class SettingsWindow:
             row=0, column=1, columnspan=2, sticky="w", pady=4
         )
 
-        ttk.Label(frame, text="Token d'agent").grid(row=1, column=0, sticky="w", pady=4)
-        self._token_entry = ttk.Entry(frame, textvariable=self._token, show="•", width=44)
+        ttk.Label(frame, text="Token").grid(row=1, column=0, sticky="w", pady=4)
+        self._token_entry = ttk.Entry(
+            frame, textvariable=self._token, show="•", width=_FIELD_WIDTH_CHARS
+        )
         self._token_entry.grid(row=1, column=1, sticky="ew", pady=4)
         self._show_token_box = ttk.Checkbutton(
             frame,
@@ -101,7 +128,7 @@ class SettingsWindow:
 
         ttk.Label(frame, text="Interface").grid(row=2, column=0, sticky="w", pady=4)
         self._interface_box = ttk.Combobox(
-            frame, textvariable=self._interface, state="readonly", width=42
+            frame, textvariable=self._interface, state="readonly", width=_FIELD_WIDTH_CHARS
         )
         self._interface_box.grid(row=2, column=1, sticky="ew", pady=4)
         self._refresh_button = ttk.Button(frame, text="Actualiser", command=self._on_refresh)
@@ -121,9 +148,25 @@ class SettingsWindow:
         self._action_button = ttk.Button(frame, text="Démarrer", command=self._on_action)
         self._action_button.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 4))
 
-        ttk.Label(frame, textvariable=self._status, justify="left", wraplength=440).grid(
-            row=5, column=0, columnspan=3, sticky="w"
+        status_row = ttk.Frame(frame)
+        status_row.grid(row=5, column=0, columnspan=3, sticky="w")
+        # Un Canvas et non un caractère « ● » : sa couleur ne dépend pas de la police,
+        # et son fond reprend celui du thème pour ne pas dessiner de carré autour.
+        self._status_dot = tk.Canvas(
+            status_row,
+            width=_DOT_SIZE_PX,
+            height=_DOT_SIZE_PX,
+            highlightthickness=0,
+            background=ttk.Style().lookup("TFrame", "background"),
         )
+        self._status_dot_oval = self._status_dot.create_oval(
+            1, 1, _DOT_SIZE_PX - 1, _DOT_SIZE_PX - 1, fill=_DOT_STOPPED_COLOR, outline=""
+        )
+        # Calée sur la première ligne du message, qui peut en compter plusieurs (erreur).
+        self._status_dot.grid(row=0, column=0, sticky="n", pady=(4, 0), padx=(0, 8))
+        ttk.Label(
+            status_row, textvariable=self._status, justify="left", wraplength=_STATUS_WRAP_PX
+        ).grid(row=0, column=1, sticky="w")
 
     # --- Chargement et rafraîchissement ---------------------------------------------
 
@@ -243,6 +286,9 @@ class SettingsWindow:
             self._interface_box.state(["readonly"])
         self._action_button.state(["!disabled"])
         self._action_button.configure(text="Arrêter" if running else "Démarrer")
+        self._status_dot.itemconfigure(
+            self._status_dot_oval, fill=_DOT_RUNNING_COLOR if running else _DOT_STOPPED_COLOR
+        )
 
     def _on_close(self) -> None:
         # On attend ici, contrairement au bouton : la fenêtre disparaît, et l'interface
