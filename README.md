@@ -1,199 +1,86 @@
-# Tracee Agent
+<div align="center">
 
-> Agent de capture réseau pour Tracee.
+<img src="src/tracee_agent/gui/tracee.png" alt="Logo Tracee" width="64">
 
-Composant client de [Tracee](https://github.com/lucasmaiaux/tracee). À installer sur les machines dont vous souhaitez observer le trafic réseau. L'agent capture passivement le trafic des interfaces réseau sélectionnées, l'analyse localement, et transmet les événements au serveur Tracee via une connexion sécurisée.
+# Tracee
 
-**Le serveur (backend + frontend) est dans un repo séparé : [tracee](https://github.com/lucasmaiaux/tracee).**
+**Voir où part le trafic réseau de votre ordinateur, et comprendre ce qu'il dit.**
 
-## Architecture
+[Télécharger](#téléchargement) · [Démarrage rapide](#démarrage-rapide) · [Le site Tracee](https://tracee.lucas-maiaux.fr)
 
-```
-┌────────────────────────────┐
-│  Votre machine             │
-│  ┌──────────────────────┐  │
-│  │  tracee-agent        │  │
-│  │  - Capture (Scapy)   │  │
-│  │  - Parsing local     │  │
-│  │  - Identification    │  │
-│  │    (DNS, SNI, ASN)   │  │
-│  └──────────┬───────────┘  │
-└─────────────┼──────────────┘
-              │
-        WebSocket (WSS)
-              │
-              ▼
-   ┌────────────────────┐
-   │  Serveur Tracee    │
-   │  Voir le repo:     │
-   │  github.com/       │
-   │  lucasmaiaux/      │
-   │  tracee            │
-   └────────────────────┘
-```
+<img src="docs/screens/trafic.png" width="49%" alt="Les sites et pays contactés"> <img src="docs/screens/agents.png" width="49%" alt="Les ordinateurs reliés à votre compte">
+<img src="docs/screens/globe.png" width="49%" alt="Le trafic en direct sur le globe 3D"> <img src="docs/screens/analysis.png" width="49%" alt="L'analyse d'une capture par l'IA">
 
-## Prérequis
+</div>
 
-Pour **utiliser** l'agent :
+## Présentation
 
-- **Privilèges d'administration** : ouvrir un socket de capture est une opération privilégiée — root sous Linux, administrateur sous Windows. Sous Windows, l'exécutable demande l'élévation de lui-même au lancement ; sous Linux, voir `setcap` ci-dessous.
-- **[Npcap](https://npcap.com/) sous Windows** : le pilote de capture. Sa licence interdit de l'embarquer dans l'exécutable, il s'installe donc séparément. Sans lui, la capture échoue quels que soient les privilèges.
-- **Un token d'agent**, généré sur la page Agents du serveur Tracee. Il n'existe pas avant : c'est pourquoi l'agent embarque un écran de configuration.
+Tracee vous montre en direct, sur un globe en 3D, avec quels pays et quels services votre ordinateur échange : Netflix, Google, Discord… Une IA vous explique ensuite ce qu'elle a observé.
 
-Aucun Python n'est requis : l'exécutable est autonome.
+Il suffit d'installer l'application Tracee sur votre ordinateur, puis de tout suivre depuis le [site Tracee](https://tracee.lucas-maiaux.fr). Tracee ne lit jamais le contenu de vos échanges : vos messages, vos mots de passe et le contenu des pages que vous consultez restent privés.
 
-Pour **développer** :
+## Téléchargement
 
-- **Python 3.12+** et [uv](https://docs.astral.sh/uv/)
-- **`python3-tk`** sous Debian/Ubuntu (`sudo apt install python3-tk`) : Tkinter dépend d'un paquet système séparé. Prérequis de développement uniquement — PyInstaller embarque Tcl/Tk dans l'exécutable.
-
-## Installation
-
-### Exécutable autonome (recommandé)
-
-Télécharger le binaire de sa plateforme depuis les [Releases](https://github.com/lucasmaiaux/tracee-agent/releases), puis le placer dans un **dossier accessible en écriture** — Bureau ou Téléchargements. L'agent y écrit sa configuration ; un dossier protégé comme `C:\Program Files` ne conviendrait pas.
-
-```bash
-# Linux
-chmod +x tracee-agent-linux-x86_64
-sudo ./tracee-agent-linux-x86_64
-```
-
-Sous Windows, **double-cliquer** sur `tracee-agent-windows-x86_64.exe` : l'exécutable réclame lui-même l'élévation, Windows demande confirmation, et c'est tout. Aucune console ne s'ouvre — c'est une application graphique.
-
-Les deux commandes Linux ne se font qu'**une fois par fichier téléchargé**. `chmod` parce qu'un fichier attaché à une release perd son bit exécutable en chemin ; `setcap` parce que le noyau refuse un socket de capture à un processus ordinaire — c'est une protection du système, qu'aucune application ne peut contourner d'elle-même. Wireshark impose la même chose. Le seul autre chemin est de préfixer chaque lancement par `sudo`.
-
-### Depuis les sources
-
-```bash
-git clone https://github.com/lucasmaiaux/tracee-agent.git
-cd tracee-agent
-uv sync
-make gui          # écran de configuration
-make build-exe    # construire l'exécutable de la plateforme courante
-```
-
-## Configuration
-
-Lancé **sans argument**, l'agent ouvre son écran de configuration : coller le token, choisir l'interface, Démarrer. La configuration est enregistrée au premier démarrage et pré-remplie aux lancements suivants.
-
-L'URL du serveur n'y est pas saisissable — l'agent ne parle qu'au serveur Tracee, et l'adresse par défaut est intégrée. Elle reste modifiable dans le YAML pour un autre déploiement.
-
-### Où vit le `config.yaml`
-
-| Mode d'exécution | Emplacement |
-|---|---|
-| Exécutable autonome | **à côté du binaire** |
-| Sources (`uv run`, `make`) | répertoire de travail courant |
-
-À côté de l'exécutable, et non dans `~/.config` : sous `sudo`, `HOME` devient `/root`, et un fichier rangé dans le `~` de l'utilisateur ne serait pas relu par l'agent lancé en privilégié. Le fichier est aussi visible et supprimable, pour repartir de zéro.
-
-⚠️ Il contient le token d'agent en clair : ne pas le partager ni le committer (il est gitignoré).
-
-### Journalisation
-
-L'agent lancé par son écran de configuration est **silencieux** : rien dans le terminal d'où on l'a lancé, aucune console sous Windows, aucun fichier de journal. Les pannes sur lesquelles on peut agir — token refusé, capture impossible, privilèges manquants — sont annoncées dans la fenêtre ; le reste (paquets décodés, services identifiés) relève du développement.
-
-Deux façons de retrouver la parole :
-
-```bash
-tracee-agent --verbose        # l'écran s'ouvre, et les logs reviennent dans le terminal
-```
-
-ou renseigner `logging.file` dans le `config.yaml`, avec un chemin dont le répertoire existe déjà.
-
-### Deux profils
-
-| Profil | Fichier | Usage |
+| Système | Architecture | Fichier |
 |---|---|---|
-| Normal | `config.yaml` | serveur Tracee |
-| Mise au point | `config.local.yaml` | backend lancé en local |
+| Windows 10 / 11 | x64 | [tracee-agent-windows-x86_64.exe](https://github.com/lucasmaiaux/tracee-agent/releases/latest/download/tracee-agent-windows-x86_64.exe) |
+| Linux | x64 | [tracee-agent-linux-x86_64](https://github.com/lucasmaiaux/tracee-agent/releases/latest/download/tracee-agent-linux-x86_64) |
 
-La case **« Profil de mise au point »** bascule de l'un à l'autre. Ils sont séparés parce que leurs tokens diffèrent : un agent déclaré sur le backend local n'est pas celui du serveur distant.
+Ces liens pointent toujours vers la dernière version. Les versions précédentes sont dans les [Releases](https://github.com/lucasmaiaux/tracee-agent/releases).
 
-Pour un usage en ligne de commande, partir de `config.example.yaml`.
+> [!IMPORTANT]
+> Avant le premier lancement, quelques éléments sont à installer selon votre système. Suivez le [démarrage rapide](#démarrage-rapide).
 
-## Utilisation
+## Démarrage rapide
 
-### Écran de configuration
+Commencez par récupérer votre **jeton de connexion** : connectez-vous sur le [site Tracee](https://tracee.lucas-maiaux.fr), ouvrez la page **Agents de capture** et cliquez sur **Déclarer un agent**. Copiez le jeton tout de suite : il n'est affiché qu'une seule fois.
+
+### Windows
+
+**À installer une fois**
+
+- **[Npcap](https://npcap.com/#download)** : le composant qui permet d'observer le trafic de votre ordinateur. C'est le même que celui de Wireshark.
+
+**Lancer Tracee**
+
+1. Téléchargez `tracee-agent-windows-x86_64.exe` et placez-le sur votre Bureau ou dans Téléchargements.
+2. Double-cliquez dessus, puis acceptez quand Windows demande l'autorisation.
+   Si Windows affiche « Windows a protégé votre ordinateur », cliquez sur **Informations complémentaires**, puis **Exécuter quand même**.
+3. Collez votre jeton dans le champ **Token**, choisissez votre connexion (Wi-Fi ou câble) dans **Interface**, puis cliquez sur **Démarrer**.
+
+### Linux
+
+**À installer une fois**
+
+- L'outil `setcap`, souvent déjà présent. Sinon :
 
 ```bash
-sudo ./tracee-agent-linux-x86_64     # sans argument
-tracee-agent --gui                   # explicitement
+sudo apt install libcap2-bin     # Debian / Ubuntu
+sudo dnf install libcap          # Fedora
+sudo pacman -S libcap            # Arch
 ```
 
-### Ligne de commande
+**Lancer Tracee**
 
-Le chemin de développement et d'usage serveur. `--gui` est incompatible avec ces options.
+1. Téléchargez `tracee-agent-linux-x86_64` dans un dossier personnel, puis autorisez-le à observer le trafic. À refaire après chaque nouveau téléchargement :
 
-```bash
-tracee-agent --list-interfaces                                  # ne demande aucun privilège
-sudo tracee-agent --config config.yaml
-sudo tracee-agent --config config.yaml --interface eth0
-sudo tracee-agent --config config.yaml --pick-interface         # choix dans une liste
-sudo tracee-agent --config config.yaml --verbose                # logs DEBUG
-```
+   ```bash
+   chmod +x tracee-agent-linux-x86_64
+   sudo setcap cap_net_raw,cap_net_admin+ep tracee-agent-linux-x86_64
+   ```
 
-### Capturer sans `sudo` sous Linux
+2. Lancez-le :
 
-`sudo` n'est pas la seule voie : la capability `cap_net_raw` autorise un utilisateur ordinaire à ouvrir un socket de capture.
+   ```bash
+   ./tracee-agent-linux-x86_64
+   ```
 
-```bash
-sudo setcap cap_net_raw,cap_net_admin+ep ./tracee-agent-linux-x86_64
-./tracee-agent-linux-x86_64          # plus besoin de sudo
-```
+3. Collez votre jeton dans le champ **Token**, choisissez votre connexion (Wi-Fi ou câble) dans **Interface**, puis cliquez sur **Démarrer**.
 
-C'est la manière recommandée pour l'écran de configuration sous Linux : selon la session graphique, `sudo` peut perdre l'accès au serveur d'affichage et empêcher la fenêtre de s'ouvrir. À poser sur l'exécutable autonome uniquement — jamais sur l'interpréteur Python d'un venv, qui rendrait privilégié n'importe quel script.
+### Et ensuite ?
 
-### Démarrage automatique (Linux, systemd)
-
-Pas encore fourni. En attendant, un service se déclare à la main en pointant l'exécutable et son `--config`.
-
-## Sécurité et vie privée
-
-L'agent fonctionne en **lecture seule** sur les interfaces réseau. Il n'injecte aucun trafic, ne modifie rien, ne stocke aucun contenu utilisateur.
-
-Ce qu'il observe :
-- Métadonnées des paquets (IPs, ports, tailles, timing)
-- SNI dans les handshakes TLS (en clair par conception du protocole)
-- Requêtes DNS en clair (le DNS chiffré DoH/DoT n'est pas observable)
-
-Ce qu'il **n'observe pas** :
-- Contenu des communications chiffrées (HTTPS)
-- Mots de passe, cookies, tokens
-- Contenus de pages web ou de messages
-
-## Compatibilité
-
-| Version agent | Version serveur compatible |
-|---------------|----------------------------|
-| 1.0.x         | 1.0.x                      |
-
-Voir la matrice détaillée dans le repo serveur : [tracee/docs/PROTOCOL.md](https://github.com/lucasmaiaux/tracee/blob/main/docs/PROTOCOL.md).
-
-## Légalité
-
-La capture réseau est légale uniquement sur **votre propre réseau et vos propres appareils**. N'installez pas cet agent sur des machines ou réseaux que vous n'êtes pas autorisé à observer.
-
-## Plateformes supportées
-
-Distribuées et testées :
-
-- Linux (Debian, Ubuntu, Fedora, Arch)
-- Windows 10/11 — [Npcap](https://npcap.com/) requis
-
-macOS n'est pas une cible : aucun exécutable n'est publié et rien n'y est vérifié. Le code n'a pourtant rien de spécifique aux deux autres systèmes ; une installation depuis les sources a des chances de fonctionner, sans garantie.
-
-## Développement
-
-Voir [PROJECT.md](docs/PROJECT.md) pour le contexte technique et [PROTOCOL.md](https://github.com/lucasmaiaux/tracee/blob/main/docs/PROTOCOL.md) pour le protocole.
+Votre trafic apparaît sur le globe du [site Tracee](https://tracee.lucas-maiaux.fr). Vos réglages sont mémorisés : la prochaine fois, un clic sur **Démarrer** suffit.
 
 ## Auteur
 
-Lucas MAIAUX — [@lucasmaiaux](https://github.com/lucasmaiaux)
-
-Projet réalisé dans le cadre du **Projet Libre 2026** — Campus Numérique in the Alps, formation Développeurs Avancés.
-
-## Licence
-
-MIT
+Lucas MAIAUX ([@lucasmaiaux](https://github.com/lucasmaiaux)). Projet réalisé dans le cadre du **Projet Libre 2026**, Campus Numérique in the Alps, formation Développeurs Avancés.
