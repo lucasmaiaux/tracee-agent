@@ -4,12 +4,12 @@
 
 # Tracee
 
-**Voir où part le trafic réseau de votre ordinateur, et comprendre ce qu'il dit.**
+**Suivez la trace de vos données**
 
 [Télécharger](#téléchargement) · [Démarrage rapide](#démarrage-rapide) · [Le site Tracee](https://tracee.lucas-maiaux.fr)
 
-<img src="docs/screens/trafic.png" width="49%" alt="Les sites et pays contactés"> <img src="docs/screens/agents.png" width="49%" alt="Les ordinateurs reliés à votre compte">
-<img src="docs/screens/globe.png" width="49%" alt="Le trafic en direct sur le globe 3D"> <img src="docs/screens/analysis.png" width="49%" alt="L'analyse d'une capture par l'IA">
+<a href="docs/screens/trafic.png?raw=true"><img src="docs/screens/trafic.png" width="49%" alt="Les sites et pays contactés"></a> <a href="docs/screens/agents.png?raw=true"><img src="docs/screens/agents.png" width="49%" alt="Les ordinateurs reliés à votre compte"></a>
+<a href="docs/screens/globe.png?raw=true"><img src="docs/screens/globe.png" width="49%" alt="Le trafic en direct sur le globe 3D"></a> <a href="docs/screens/analysis.png?raw=true"><img src="docs/screens/analysis.png" width="49%" alt="L'analyse d'une capture par l'IA"></a>
 
 </div>
 
@@ -83,4 +83,4 @@ Votre trafic apparaît sur le globe du [site Tracee](https://tracee.lucas-maiaux
 
 ## Auteur
 
-Lucas MAIAUX ([@lucasmaiaux](https://github.com/lucasmaiaux)). Projet réalisé dans le cadre du **Projet Libre 2026**, Campus Numérique in the Alps, formation Développeurs Avancés.
+Lucas MAIAUX ([@lucasmaiaux](https://github.com/lucasmaiaux)). Projet réalisé dans le cadre du **Projet Libre 2026**, Campus Numérique in the Alps, formation Développeur Avancé.
