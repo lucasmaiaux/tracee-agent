@@ -8,8 +8,8 @@
 
 [Télécharger](#téléchargement) · [Démarrage rapide](#démarrage-rapide) · [Le site Tracee](https://tracee.lucas-maiaux.fr)
 
-<a href="docs/screens/trafic.png?raw=true"><img src="docs/screens/trafic.png" width="49%" alt="Les sites et pays contactés"></a> <a href="docs/screens/agents.png?raw=true"><img src="docs/screens/agents.png" width="49%" alt="Les ordinateurs reliés à votre compte"></a>
-<a href="docs/screens/globe.png?raw=true"><img src="docs/screens/globe.png" width="49%" alt="Le trafic en direct sur le globe 3D"></a> <a href="docs/screens/analysis.png?raw=true"><img src="docs/screens/analysis.png" width="49%" alt="L'analyse d'une capture par l'IA"></a>
+<a href="https://raw.githubusercontent.com/lucasmaiaux/tracee-agent/main/docs/screens/trafic.png"><img src="docs/screens/trafic.png" width="49%" alt="Les sites et pays contactés"></a> <a href="https://raw.githubusercontent.com/lucasmaiaux/tracee-agent/main/docs/screens/agents.png"><img src="docs/screens/agents.png" width="49%" alt="Les ordinateurs reliés à votre compte"></a>
+<a href="https://raw.githubusercontent.com/lucasmaiaux/tracee-agent/main/docs/screens/globe.png"><img src="docs/screens/globe.png" width="49%" alt="Le trafic en direct sur le globe 3D"></a> <a href="https://raw.githubusercontent.com/lucasmaiaux/tracee-agent/main/docs/screens/analysis.png"><img src="docs/screens/analysis.png" width="49%" alt="L'analyse d'une capture par l'IA"></a>
 
 </div>
 
